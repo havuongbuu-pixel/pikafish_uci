@@ -1,5 +1,12 @@
 // Gate B (Dart half): drives PikafishTransport the way the stage-D session
 // will, and measures that the blocking native read never stalls this isolate.
+// ignore_for_file: avoid_relative_lib_imports
+//
+// Deliberate. Importing pikafish_uci as a package would need a Flutter SDK to
+// resolve, since it declares a Flutter plugin. Nothing in its lib/ imports
+// package:flutter, so reaching in by path keeps this gate runnable under the
+// plain Dart VM — which is what lets CI exercise the transport without
+// installing Flutter.
 import 'dart:async';
 import 'dart:io';
 
