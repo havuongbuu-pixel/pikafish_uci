@@ -19,6 +19,51 @@ if(NOT EXISTS ${PIKAFISH_SRC_DIR}/main.cpp)
     "Pikafish-HCE sources missing. Run: git submodule update --init --recursive")
 endif()
 
+# Apply patches here rather than expecting a separate manual step.
+#
+# The engine's main() is renamed so the same objects can link into a shared
+# library, and without it the link fails on an undefined pikafish_main. Gradle
+# invokes CMake directly and never runs tools/apply_patches.sh, so a fresh clone
+# would not build. Done in CMake rather than by shelling out to the script
+# because Android is built on Windows too, where bash is not a given.
+set(PIKAFISH_REPO ${CMAKE_CURRENT_LIST_DIR}/../third_party/Pikafish-HCE)
+find_package(Git QUIET)
+if(NOT GIT_FOUND)
+  message(FATAL_ERROR "git is required to apply packages/pikafish_uci/patches.")
+endif()
+
+file(GLOB PIKAFISH_PATCHES ${CMAKE_CURRENT_LIST_DIR}/../patches/*.patch)
+foreach(patch IN LISTS PIKAFISH_PATCHES)
+  # `apply --reverse --check` succeeding means it is already in place, so
+  # re-configuring is a no-op rather than an error.
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${patch}
+    WORKING_DIRECTORY ${PIKAFISH_REPO}
+    RESULT_VARIABLE already_applied
+    OUTPUT_QUIET ERROR_QUIET)
+  if(NOT already_applied EQUAL 0)
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} apply ${patch}
+      WORKING_DIRECTORY ${PIKAFISH_REPO}
+      RESULT_VARIABLE patch_result
+      ERROR_VARIABLE patch_error)
+    if(NOT patch_result EQUAL 0)
+      message(FATAL_ERROR
+        "Could not apply ${patch}. The submodule may be at an unexpected "
+        "commit; check `git -C ${PIKAFISH_REPO} rev-parse HEAD`.\n${patch_error}")
+    endif()
+    message(STATUS "pikafish: applied ${patch}")
+  endif()
+endforeach()
+
+# Fail here with something readable rather than at link time with an undefined
+# symbol, if the patch set ever stops covering the rename.
+file(READ ${PIKAFISH_SRC_DIR}/main.cpp PIKAFISH_MAIN_SOURCE)
+if(NOT PIKAFISH_MAIN_SOURCE MATCHES "int pikafish_main")
+  message(FATAL_ERROR
+    "Pikafish main() was not renamed to pikafish_main(); the bridge cannot link.")
+endif()
+
 # Mirrors SRCS in the upstream Makefile, verbatim and in order.
 # nnue/ is deliberately absent: the HCE fork ships the directory but does not
 # compile it. Do not replace this with a glob.
