@@ -44,7 +44,8 @@ android {
         // which no shipped device uses and which pikafish_arch.cmake refuses on
         // purpose. Building the engine for an architecture we never verified is
         // worse than not building it, so the list is explicit.
-        // Dropping armeabi-v7a is a one-line change; those devices keep HVENGINE.
+        // Dropping armeabi-v7a is a one-line change; those devices fall back to
+        // the remote gateway.
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
         }

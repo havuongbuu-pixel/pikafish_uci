@@ -3,9 +3,8 @@
 Pikafish HCE packaged for Flutter over FFI. Xiangqi engine, GPL-3.
 
 Staging note: this package currently lives inside the HocVienCoTuong repo while
-it is built out. The plan is a standalone repo consumed by git ref, the way
-`hvengine` already is; extracting it is a `git subtree split`, and nothing here
-depends on the location.
+it is built out. The plan is a standalone repo consumed by git ref; extracting
+it is a `git subtree split`, and nothing here depends on the location.
 
 ## Status
 
