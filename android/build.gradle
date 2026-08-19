@@ -1,0 +1,74 @@
+// Android build for the pikafish_uci FFI plugin.
+//
+// This file only wires Gradle to ../src/CMakeLists.txt. Every decision about
+// how the engine is compiled — source list, architecture defines, 16 KB page
+// alignment — lives in CMake so the iOS podspec can read the same tree.
+// Verify a change here with tools/android_build.sh, which builds the ABIs
+// directly and checks them against upstream's own Makefile.
+
+group = 'com.hocviencotuong.pikafish_uci'
+version = '0.1.0'
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.11.1'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace = 'com.hocviencotuong.pikafish_uci'
+    compileSdk = 36
+
+    // Pinned in the plugin rather than inherited from the app: the engine is
+    // native code, and "which NDK compiled it" must not depend on whoever
+    // happens to be building the app.
+    ndkVersion = '28.2.13676358'
+
+    defaultConfig {
+        minSdk = 21
+
+        // Without this Gradle builds every ABI it knows, including 32-bit x86,
+        // which no shipped device uses and which pikafish_arch.cmake refuses on
+        // purpose. Building the engine for an architecture we never verified is
+        // worse than not building it, so the list is explicit.
+        // Dropping armeabi-v7a is a one-line change; those devices keep HVENGINE.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+
+        externalNativeBuild {
+            cmake {
+                // c++_static keeps the STL inside our own .so, so the plugin
+                // cannot collide with another plugin's libc++_shared.
+                arguments '-DANDROID_STL=c++_static'
+                cppFlags '-std=c++17', '-fno-exceptions'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file('../src/CMakeLists.txt')
+            version = '3.22.1'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+        }
+    }
+}

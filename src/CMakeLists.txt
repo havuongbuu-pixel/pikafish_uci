@@ -37,7 +37,14 @@ target_compile_options(pikafish_core PRIVATE
   -Wall -Wcast-qual -fno-exceptions -O3)
 target_link_libraries(pikafish_core PUBLIC Threads::Threads)
 pikafish_apply_arch_flags(pikafish_core)
-set_target_properties(pikafish_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# Hidden by default so the shared library exports only the four functions
+# marked PIKAFISH_EXPORT. Without this the engine's own renamed entry point
+# leaks into the dynamic symbol table and the FFI contract stops being obvious.
+set_target_properties(pikafish_core PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  C_VISIBILITY_PRESET hidden
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON)
 
 # main() was renamed to pikafish_main() by patches/0001-rename-main.patch, so
 # the entry point is supplied here. Stage B links the same core into a shared
@@ -56,6 +63,23 @@ set_target_properties(pikafish_uci PROPERTIES
   C_VISIBILITY_PRESET hidden
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN ON)
+
+if(ANDROID)
+  # Google Play rejects apps targeting Android 15+ whose native libraries are
+  # not 16 KB page aligned. NDK r28+ does this by default; the flag is kept so
+  # an older pinned NDK cannot silently produce a rejectable artifact.
+  # tools/android_build.sh verifies the shipped .so rather than trusting this.
+  target_link_options(pikafish_uci PRIVATE
+    -Wl,-z,max-page-size=16384
+    # ANDROID_STL=c++_static pulls libc++ in as an archive, and archive symbols
+    # keep default visibility, so without this the library re-exports the whole
+    # of libc++ from its dynamic symbol table. That is a well-known source of
+    # symbol collisions with other native libraries in the same process.
+    # --exclude-libs hides everything that arrived via an archive, including our
+    # own engine core; the four bridge functions are compiled straight into this
+    # target and keep their explicit default visibility.
+    -Wl,--exclude-libs,ALL)
+endif()
 
 option(PIKAFISH_BUILD_SMOKE "Build the native bridge smoke test" ON)
 if(PIKAFISH_BUILD_SMOKE AND NOT ANDROID)

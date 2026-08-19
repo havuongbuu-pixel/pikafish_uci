@@ -5,11 +5,20 @@ publish_to: 'none'
 
 environment:
   sdk: ^3.12.0
+  flutter: '>=3.44.0'
 
-# Pure Dart for now, on purpose. Nothing in lib/ needs Flutter -- it is dart:ffi,
-# dart:isolate and package:ffi -- so the transport can be exercised by the plain
-# Dart VM, which is what tools/gate_b.sh does. Stage C turns this into a Flutter
-# FFI plugin by adding the flutter dependency and the plugin.platforms block
-# alongside android/build.gradle.
 dependencies:
+  flutter:
+    sdk: flutter
   ffi: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true

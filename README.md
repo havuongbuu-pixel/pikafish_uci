@@ -13,7 +13,7 @@ depends on the location.
 | --- | --- | --- |
 | A | submodule, patch, CMake, desktop parity | done |
 | B | FFI bridge, Dart bindings, isolate transport | done |
-| C | Android build | not started |
+| C | Android build | done, except running on a device |
 
 This is a pure Dart package today, on purpose: nothing in `lib/` needs Flutter,
 so the transport can be exercised by the plain Dart VM. Stage C turns it into a
@@ -57,6 +57,20 @@ tools/gate_b.sh                  # gate B: bridge and transport work
 `gate_b.sh` builds, runs the native bridge smoke test, then runs the Dart
 transport gate. It skips the Dart half with a message when `dart` is not on
 PATH; the native half still gates the bridge.
+
+For Android:
+
+```sh
+ANDROID_NDK_HOME=/path/to/ndk tools/android_build.sh   # gate C, portable half
+gradle :pikafish_uci:assembleRelease                   # gate C, packaging half
+```
+
+`android_build.sh` cross-builds every ABI named in `android/build.gradle` and
+checks each one's define set against upstream's Makefile, its 16 KB page
+alignment, and that it exports exactly the four bridge functions. It reads the
+ABI list from `build.gradle` on purpose: a second hand-maintained list is how a
+Gradle build ends up shipping an architecture the gate never saw. Run the Gradle
+half too — it exercises the packaging path, which is where that bug showed up.
 
 `bench_parity.sh` builds the engine twice -- once with upstream's own Makefile
 from pristine sources, once through our CMake -- and compares them. It runs

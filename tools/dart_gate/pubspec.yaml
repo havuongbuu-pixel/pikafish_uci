@@ -5,6 +5,10 @@ publish_to: 'none'
 environment:
   sdk: ^3.12.0
 
+# Deliberately does not depend on pikafish_uci as a package. Since stage C that
+# package declares a Flutter plugin, so resolving it needs a Flutter SDK — but
+# nothing in its lib/ imports package:flutter. Importing the transport by
+# relative path keeps this gate runnable under the plain Dart VM, which is what
+# lets CI exercise it without installing Flutter.
 dependencies:
-  pikafish_uci:
-    path: ../..
+  ffi: ^2.1.0

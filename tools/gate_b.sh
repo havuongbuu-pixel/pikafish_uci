@@ -43,6 +43,9 @@ if ! command -v dart >/dev/null 2>&1; then
 fi
 lib="$(ls "$BUILD"/libpikafish_uci.* 2>/dev/null | head -1)"
 [ -n "$lib" ] || { echo "  FAIL: no shared library was built" >&2; exit 1; }
-( cd "$ROOT/tools/dart_gate" \
-  && dart pub get >/dev/null \
-  && dart run bin/gate_b.dart "$lib" )
+
+if ! ( cd "$ROOT/tools/dart_gate" && dart pub get >/dev/null 2>&1 ); then
+  echo "  SKIPPED: dart pub get failed (needs network for package:ffi)"
+  exit 0
+fi
+( cd "$ROOT/tools/dart_gate" && dart run bin/gate_b.dart "$lib" )

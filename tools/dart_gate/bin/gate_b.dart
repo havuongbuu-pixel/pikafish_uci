@@ -3,7 +3,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:pikafish_uci/src/ffi_uci_transport.dart';
+import '../../../lib/src/ffi_uci_transport.dart';
 
 int failures = 0;
 void check(String what, bool ok, [String detail = '']) {
