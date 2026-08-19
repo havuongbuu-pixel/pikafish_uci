@@ -35,7 +35,16 @@ android {
     // Pinned in the plugin rather than inherited from the app: the engine is
     // native code, and "which NDK compiled it" must not depend on whoever
     // happens to be building the app.
-    ndkVersion = '28.2.13676358'
+    //
+    // r27 rather than r28: it is the NDK Flutter stable ships against, and the
+    // one already installed on the development machines. The difference that
+    // matters is 16 KB page alignment, which r28+ emits by default and r27 does
+    // not; ../src/CMakeLists.txt passes -Wl,-z,max-page-size=16384 explicitly
+    // for exactly this case, so the shipped .so stays acceptable to Play on
+    // either toolchain. tools/android_build.sh checks the alignment of the
+    // artifact rather than trusting the flag — run it before shipping a build
+    // produced by a different NDK than the one upstream verified.
+    ndkVersion = '27.0.12077973'
 
     defaultConfig {
         minSdk = 21
