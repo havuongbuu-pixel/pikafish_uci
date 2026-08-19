@@ -46,3 +46,20 @@ if(PIKAFISH_BUILD_CLI AND NOT ANDROID)
   add_executable(pikafish_cli ${CMAKE_CURRENT_LIST_DIR}/pikafish_cli.cpp)
   target_link_libraries(pikafish_cli PRIVATE pikafish_core)
 endif()
+
+# The FFI surface: engine core plus the pipe/thread bridge. This is the library
+# Dart opens on Android and links into the app binary on iOS.
+add_library(pikafish_uci SHARED ${CMAKE_CURRENT_LIST_DIR}/pikafish_bridge.cpp)
+target_link_libraries(pikafish_uci PRIVATE pikafish_core)
+target_compile_options(pikafish_uci PRIVATE -Wall -fno-exceptions -O3)
+set_target_properties(pikafish_uci PROPERTIES
+  C_VISIBILITY_PRESET hidden
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON)
+
+option(PIKAFISH_BUILD_SMOKE "Build the native bridge smoke test" ON)
+if(PIKAFISH_BUILD_SMOKE AND NOT ANDROID)
+  add_executable(pikafish_bridge_smoke
+    ${CMAKE_CURRENT_LIST_DIR}/../tools/bridge_smoke.cpp)
+  target_link_libraries(pikafish_bridge_smoke PRIVATE pikafish_uci)
+endif()

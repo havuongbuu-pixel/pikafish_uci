@@ -1,0 +1,15 @@
+name: pikafish_uci
+description: Pikafish HCE xiangqi engine exposed to Flutter over FFI.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.12.0
+
+# Pure Dart for now, on purpose. Nothing in lib/ needs Flutter -- it is dart:ffi,
+# dart:isolate and package:ffi -- so the transport can be exercised by the plain
+# Dart VM, which is what tools/gate_b.sh does. Stage C turns this into a Flutter
+# FFI plugin by adding the flutter dependency and the plugin.platforms block
+# alongside android/build.gradle.
+dependencies:
+  ffi: ^2.1.0

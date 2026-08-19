@@ -12,31 +12,51 @@ depends on the location.
 | Stage | Scope | State |
 | --- | --- | --- |
 | A | submodule, patch, CMake, desktop parity | done |
-| B | FFI bridge, Dart bindings, isolate transport | not started |
+| B | FFI bridge, Dart bindings, isolate transport | done |
 | C | Android build | not started |
 
-The Dart package (`pubspec.yaml`, `lib/`) arrives in stage B. Stage A is a
-native build only, so there is deliberately no Dart code yet.
+This is a pure Dart package today, on purpose: nothing in `lib/` needs Flutter,
+so the transport can be exercised by the plain Dart VM. Stage C turns it into a
+Flutter FFI plugin.
 
 ## Layout
 
 ```
 src/                      one native tree, every platform reads it
-  CMakeLists.txt          engine core; mirrors upstream's SRCS list
+  CMakeLists.txt          engine core, FFI library, desktop CLI
   pikafish_arch.cmake     ABI -> -D flags; mirrors upstream's ARCH blocks
+  pikafish_bridge.{h,cpp} pipes + dup2 + pthread; the FFI surface
   pikafish_cli.cpp        desktop entry point (main() was renamed away)
+lib/
+  src/bindings.dart       four hand-written C lookups
+  src/uci_transport.dart  the interface everything above depends on
+  src/ffi_uci_transport.dart  reader isolate + line assembly
 third_party/Pikafish-HCE  git submodule, pinned
 patches/                  applied to the submodule after checkout
-tools/                    apply_patches.sh, bench_parity.sh
+tools/                    apply_patches.sh, bench_parity.sh, gate_b.sh
 ```
+
+## Careful: starting the engine takes over stdout
+
+`pikafish_start()` points fd 0 and fd 1 at the engine's pipes. fd 1 becomes the
+*write* end of the engine-to-host pipe, so anything the host prints to stdout
+afterwards comes back out of `pikafish_read` looking like engine output. Host
+diagnostics must go to stderr, and consumers must ignore lines they do not
+recognise. The engine also starts only once per process and cannot be
+restarted.
 
 ## Build and verify
 
 ```sh
 git submodule update --init --recursive
 tools/apply_patches.sh
-tools/bench_parity.sh            # the gate
+tools/bench_parity.sh            # gate A: build matches upstream
+tools/gate_b.sh                  # gate B: bridge and transport work
 ```
+
+`gate_b.sh` builds, runs the native bridge smoke test, then runs the Dart
+transport gate. It skips the Dart half with a message when `dart` is not on
+PATH; the native half still gates the bridge.
 
 `bench_parity.sh` builds the engine twice -- once with upstream's own Makefile
 from pristine sources, once through our CMake -- and compares them. It runs

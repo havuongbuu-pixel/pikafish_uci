@@ -1,0 +1,10 @@
+name: pikafish_dart_gate
+description: Runner for the stage B transport gate.
+publish_to: 'none'
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  pikafish_uci:
+    path: ../..

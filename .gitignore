@@ -1,3 +1,5 @@
 build/
 .cxx/
 compile_commands.json
+.dart_tool/
+pubspec.lock
