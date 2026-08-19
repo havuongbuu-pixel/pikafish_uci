@@ -51,10 +51,13 @@ three checks and each exists for a different reason:
 
 ## Working with the patch
 
-`apply_patches.sh` edits the submodule's working tree, so `git status` in the
-parent repo will report the submodule as having modified content. That is
-expected. Only the submodule *commit pointer* is tracked; the patch is applied
-at build time and re-applying is a no-op.
+`apply_patches.sh` edits the submodule's working tree, so after running it
+`git status` in the parent repo reports the submodule as having modified
+content. That is expected: only the submodule *commit pointer* is tracked, the
+patch is applied at build time, and re-applying is a no-op.
+
+`bench_parity.sh` cleans up after itself — it restores the submodule unless you
+had already patched it yourself — so running the gate leaves the tree clean.
 
 To move to a newer upstream commit: check the submodule out at the new commit,
 re-run `apply_patches.sh`, and re-run `bench_parity.sh` before committing the

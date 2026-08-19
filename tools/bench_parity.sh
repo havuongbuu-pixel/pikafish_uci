@@ -22,7 +22,21 @@ ARCH="${1:-x86-64-modern}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SUB="$ROOT/third_party/Pikafish-HCE"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+
+# The CMake build needs the patch applied, but leaving the submodule dirty
+# afterwards makes every later `git status` noisy and looks like uncommitted
+# work. Restore whatever state we found, unless the caller had already patched.
+PATCH_WAS_APPLIED=no
+if git -C "$SUB" apply --reverse --check "$ROOT/patches/0001-rename-main.patch" 2>/dev/null; then
+  PATCH_WAS_APPLIED=yes
+fi
+cleanup() {
+  rm -rf "$WORK"
+  if [ "$PATCH_WAS_APPLIED" = no ]; then
+    git -C "$SUB" checkout -- src/main.cpp 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
 
 jobs="$( (nproc || sysctl -n hw.ncpu || echo 2) 2>/dev/null )"
 
