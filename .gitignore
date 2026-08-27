@@ -5,3 +5,5 @@ compile_commands.json
 pubspec.lock
 android/.gradle/
 android/build/
+ios/generated/
+macos/generated/
