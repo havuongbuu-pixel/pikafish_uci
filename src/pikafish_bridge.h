@@ -1,4 +1,4 @@
-// C entry points for driving Pikafish HCE in-process over UCI.
+// C entry points for driving official Pikafish NNUE in-process over UCI.
 //
 // The engine is a main() program that speaks UCI on stdin/stdout. This bridge
 // gives it a pair of pipes instead and runs it on a background thread, so the
@@ -15,8 +15,8 @@
 extern "C" {
 #endif
 
-// `used` keeps the linker from dead-stripping these out of an iOS static
-// framework, where the symbols are resolved via DynamicLibrary.process().
+// `used` complements default visibility for Apple builds, where the symbols
+// are resolved via DynamicLibrary.process().
 #define PIKAFISH_EXPORT \
   __attribute__((visibility("default"))) __attribute__((used))
 

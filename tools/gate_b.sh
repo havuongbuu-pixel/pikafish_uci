@@ -10,31 +10,25 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUB="$ROOT/third_party/Pikafish-HCE"
 BUILD="${BUILD_DIR:-$(mktemp -d)}"
+MODEL="$ROOT/../../assets/engine/pikafish.nnue"
 
-PATCH_WAS_APPLIED=no
-if git -C "$SUB" apply --reverse --check "$ROOT/patches/0001-rename-main.patch" 2>/dev/null; then
-  PATCH_WAS_APPLIED=yes
-fi
 cleanup() {
   [ -n "${BUILD_DIR:-}" ] || rm -rf "$BUILD"
-  if [ "$PATCH_WAS_APPLIED" = no ]; then
-    git -C "$SUB" checkout -- src/main.cpp 2>/dev/null || true
-  fi
 }
 trap cleanup EXIT
+
+[ -f "$MODEL" ] || { echo "missing NNUE model: $MODEL" >&2; exit 1; }
 
 jobs="$( (nproc || sysctl -n hw.ncpu || echo 2) 2>/dev/null )"
 
 echo "==> build"
-"$ROOT/tools/apply_patches.sh" >/dev/null
 cmake -S "$ROOT/src" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release >"$BUILD/cmake.log" 2>&1 \
   && cmake --build "$BUILD" -j"$jobs" >>"$BUILD/cmake.log" 2>&1 \
   || { echo "build failed:"; tail -30 "$BUILD/cmake.log"; exit 1; }
 
 echo "==> native bridge"
-"$BUILD/pikafish_bridge_smoke"
+"$BUILD/pikafish_bridge_smoke" "$MODEL"
 
 echo "==> dart transport"
 if ! command -v dart >/dev/null 2>&1; then
@@ -48,4 +42,4 @@ if ! ( cd "$ROOT/tools/dart_gate" && dart pub get >/dev/null 2>&1 ); then
   echo "  SKIPPED: dart pub get failed (needs network for package:ffi)"
   exit 0
 fi
-( cd "$ROOT/tools/dart_gate" && dart run bin/gate_b.dart "$lib" )
+( cd "$ROOT/tools/dart_gate" && dart run bin/gate_b.dart "$lib" "$MODEL" )

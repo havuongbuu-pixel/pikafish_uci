@@ -86,8 +86,13 @@ void check(const char* what, bool ok, const std::string& detail = "") {
 
 }  // namespace
 
-int main() {
+int main(int argc, char* argv[]) {
   fprintf(stderr, "bridge smoke test\n");
+
+  if (argc != 2) {
+    fprintf(stderr, "usage: pikafish_bridge_smoke /absolute/path/pikafish.nnue\n");
+    return 1;
+  }
 
   if (pikafish_start() != PIKAFISH_OK) {
     fprintf(stderr, "  pikafish_start failed\n");
@@ -104,6 +109,8 @@ int main() {
   check("uci -> id name", !id.empty(), id);
   check("uci -> uciok", !await_line("uciok", 5000).empty());
 
+  const std::string eval_command = std::string("setoption name EvalFile value ") + argv[1];
+  pikafish_write(eval_command.c_str());
   pikafish_write("isready");
   check("isready -> readyok", !await_line("readyok", 5000).empty());
 

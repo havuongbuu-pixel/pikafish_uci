@@ -1,4 +1,4 @@
-# Mirrors the per-ARCH flag logic in third_party/Pikafish-HCE/src/Makefile.
+# Mirrors the baseline mobile ARCH flag logic in official Pikafish's Makefile.
 #
 # The upstream Makefile is the authority. Any change here must keep
 # tools/bench_parity.sh passing: a build whose node count differs from the
@@ -10,12 +10,15 @@
 function(pikafish_apply_arch_flags target)
   if(ANDROID)
     if(ANDROID_ABI STREQUAL "arm64-v8a")
-      target_compile_definitions(${target} PRIVATE IS_64BIT USE_POPCNT USE_NEON=8)
+      target_compile_definitions(${target} PRIVATE
+        ARCH=armv8 IS_64BIT USE_PREFETCH USE_POPCNT USE_NEON=8)
     elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
-      target_compile_definitions(${target} PRIVATE USE_POPCNT USE_NEON=7)
+      target_compile_definitions(${target} PRIVATE
+        ARCH=armv7-neon USE_PREFETCH USE_POPCNT USE_NEON=7)
     elseif(ANDROID_ABI STREQUAL "x86_64")
       target_compile_definitions(${target} PRIVATE
-        IS_64BIT USE_POPCNT USE_SSE41 USE_SSSE3 USE_SSE2)
+        ARCH=x86-64-sse41-popcnt IS_64BIT USE_PREFETCH USE_POPCNT
+        USE_SSE41 USE_SSSE3 USE_SSE2)
       target_compile_options(${target} PRIVATE
         -msse -msse2 -msse3 -mssse3 -msse4.1 -mpopcnt)
     else()
@@ -23,11 +26,13 @@ function(pikafish_apply_arch_flags target)
     endif()
 
   elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
-    target_compile_definitions(${target} PRIVATE IS_64BIT USE_POPCNT USE_NEON=8)
+    target_compile_definitions(${target} PRIVATE
+      ARCH=armv8 IS_64BIT USE_PREFETCH USE_POPCNT USE_NEON=8)
 
   elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     target_compile_definitions(${target} PRIVATE
-      IS_64BIT USE_POPCNT USE_SSE41 USE_SSSE3 USE_SSE2)
+      ARCH=x86-64-sse41-popcnt IS_64BIT USE_PREFETCH USE_POPCNT
+      USE_SSE41 USE_SSSE3 USE_SSE2)
     target_compile_options(${target} PRIVATE
       -m64 -msse -msse2 -msse3 -mssse3 -msse4.1 -mpopcnt)
 

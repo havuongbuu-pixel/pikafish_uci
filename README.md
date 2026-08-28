@@ -1,6 +1,7 @@
 # pikafish_uci
 
-Pikafish HCE packaged for Flutter over FFI. Xiangqi engine, GPL-3.
+Official Pikafish with NNUE packaged for Flutter over FFI. Xiangqi engine,
+GPL-3.
 
 Staging note: this package currently lives inside the HocVienCoTuong repo while
 it is built out. The plan is a standalone repo consumed by git ref; extracting
@@ -12,7 +13,8 @@ it is a `git subtree split`, and nothing here depends on the location.
 | --- | --- | --- |
 | A | submodule, patch, CMake, desktop parity | done |
 | B | FFI bridge, Dart bindings, isolate transport | done |
-| C | Android build | done, except running on a device |
+| C | Android build | pending device verification for the NNUE source update |
+| D | iOS/macOS CocoaPods build and in-app NNUE smoke | done on macOS |
 
 This is a pure Dart package today, on purpose: nothing in `lib/` needs Flutter,
 so the transport can be exercised by the plain Dart VM. Stage C turns it into a
@@ -30,8 +32,8 @@ lib/
   src/bindings.dart       four hand-written C lookups
   src/uci_transport.dart  the interface everything above depends on
   src/ffi_uci_transport.dart  reader isolate + line assembly
-third_party/Pikafish-HCE  git submodule, pinned
-patches/                  applied to the submodule after checkout
+third_party/Pikafish      official git submodule, pinned
+patches/                  build-time generated modifications
 tools/                    apply_patches.sh, bench_parity.sh, gate_b.sh
 ```
 
@@ -44,11 +46,18 @@ diagnostics must go to stderr, and consumers must ignore lines they do not
 recognise. The engine also starts only once per process and cannot be
 restarted.
 
+Official Pikafish requires an external `pikafish.nnue`. The Flutter app
+verifies the bundled network hash, materialises it into Application Support,
+then sends its absolute path through the UCI `EvalFile` option before the first
+search. The reviewed embedded-host patch turns a missing network into
+`PIKAFISH_NNUE_LOAD_FAILED` instead of letting upstream call `exit()` inside the
+app process.
+
 ## Build and verify
 
 ```sh
 git submodule update --init --recursive
-tools/apply_patches.sh
+tools/apply_patches.sh           # validates generated patches; never edits the submodule
 tools/bench_parity.sh            # gate A: build matches upstream
 tools/gate_b.sh                  # gate B: bridge and transport work
 ```
@@ -78,26 +87,22 @@ three checks and each exists for a different reason:
 1. **Define set, exact.** The real architecture gate.
 2. **Node count, exact.** Behavioural gate: catches a wrong source list, an
    unapplied patch, a drifted submodule. It does **not** catch wrong
-   architecture flags -- `ARCH=general-64` and `ARCH=x86-64-modern` both bench
-   1146389 nodes. That measurement is why check 1 exists.
+   architecture flags. That measurement is why check 1 exists.
 3. **NPS, advisory.** Too load-sensitive to gate on.
 
 ## Working with the patch
 
-`apply_patches.sh` edits the submodule's working tree, so after running it
-`git status` in the parent repo reports the submodule as having modified
-content. That is expected: only the submodule *commit pointer* is tracked, the
-patch is applied at build time, and re-applying is a no-op.
-
-`bench_parity.sh` cleans up after itself — it restores the submodule unless you
-had already patched it yourself — so running the gate leaves the tree clean.
+The official submodule always remains pristine. CMake writes patched copies to
+its build directory; CocoaPods writes ignored forwarders and patched copies to
+`ios/generated` or `macos/generated`. `apply_patches.sh` is retained as a
+compatibility command that validates those generators.
 
 To move to a newer upstream commit: check the submodule out at the new commit,
-re-run `apply_patches.sh`, and re-run `bench_parity.sh` before committing the
-new pointer.
+update the network manifest when required, then run `apply_patches.sh`,
+`bench_parity.sh`, and the Flutter integration smoke before committing.
 
 ## License
 
-Pikafish HCE is GPL-3. `patches/` holds every modification made to it, and the
-submodule pins the exact upstream commit, so the corresponding source for any
-binary built here is fully determined by this directory.
+Pikafish is GPL-3. `patches/` holds every modification made to it, the submodule
+pins the exact upstream commit, and `assets/engine/pikafish_nnue_manifest.json`
+pins the network bytes used by the app.

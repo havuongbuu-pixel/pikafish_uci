@@ -23,6 +23,11 @@ list(GET removed_lines 0 old_line)
 list(GET added_lines 0 new_line)
 string(SUBSTRING "${old_line}" 1 -1 old_line)
 string(SUBSTRING "${new_line}" 1 -1 new_line)
+# Match the complete definition line. Current upstream also has a one-line
+# UNIVERSAL_BINARY shim whose prefix is identical; replacing the prefix would
+# corrupt that separate function.
+string(APPEND old_line "\n")
+string(APPEND new_line "\n")
 
 string(REPLACE "${old_line}" "" without_old "${input_source}")
 string(REPLACE "${new_line}" "" without_new "${input_source}")

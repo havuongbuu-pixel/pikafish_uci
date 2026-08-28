@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(pikafish_uci LANGUAGES CXX)
+project(pikafish_uci LANGUAGES CXX ASM)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,11 +12,11 @@ option(PIKAFISH_BUILD_CLI "Build the desktop CLI used by bench_parity.sh" ON)
 
 include(${CMAKE_CURRENT_LIST_DIR}/pikafish_arch.cmake)
 
-set(PIKAFISH_SRC_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/Pikafish-HCE/src)
+set(PIKAFISH_SRC_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/Pikafish/src)
 
 if(NOT EXISTS ${PIKAFISH_SRC_DIR}/main.cpp)
   message(FATAL_ERROR
-    "Pikafish-HCE sources missing. Run: git submodule update --init --recursive")
+    "Official Pikafish sources missing. Run: git submodule update --init --recursive")
 endif()
 
 # Gradle can reuse a configured CMake tree after another gate has restored the
@@ -43,21 +43,62 @@ add_custom_command(
   COMMENT "Generating patched Pikafish entry point"
   VERBATIM)
 
-# Mirrors SRCS in the upstream Makefile, verbatim and in order.
-# nnue/ is deliberately absent: the HCE fork ships the directory but does not
-# compile it. Do not replace this with a glob.
+# Official Pikafish terminates the process when EvalFile is missing. That is
+# correct for its CLI, but this engine is linked into the Flutter process, so
+# exit() would terminate the whole app. Generate the reviewed embedded-host
+# variant without modifying the pinned submodule.
+set(PIKAFISH_ENGINE_PATCH
+  ${CMAKE_CURRENT_LIST_DIR}/../patches/0002-embedded-nnue-failure.patch)
+set(PIKAFISH_GENERATED_ENGINE
+  ${CMAKE_CURRENT_BINARY_DIR}/generated/pikafish_engine.cpp)
+add_custom_command(
+  OUTPUT ${PIKAFISH_GENERATED_ENGINE}
+  COMMAND ${CMAKE_COMMAND}
+    -DPIKAFISH_ENGINE_INPUT=${PIKAFISH_SRC_DIR}/engine.cpp
+    -DPIKAFISH_ENGINE_OUTPUT=${PIKAFISH_GENERATED_ENGINE}
+    -P ${CMAKE_CURRENT_LIST_DIR}/generate_pikafish_engine.cmake
+  DEPENDS
+    ${PIKAFISH_SRC_DIR}/engine.cpp
+    ${PIKAFISH_ENGINE_PATCH}
+    ${CMAKE_CURRENT_LIST_DIR}/generate_pikafish_engine.cmake
+  COMMENT "Generating embedded-safe Pikafish engine"
+  VERBATIM)
+
+# Mirrors SRCS in official Pikafish's Makefile, excluding universal/ and the
+# two generated translation units. Keep this explicit so an upstream update
+# cannot silently add code to a mobile artifact.
 set(PIKAFISH_SOURCES
-  benchmark.cpp bitboard.cpp evaluate.cpp material.cpp
-  misc.cpp movegen.cpp movepick.cpp position.cpp psqt.cpp endgame.cpp
-  search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp tune.cpp)
+  attacks.cpp benchmark.cpp bitboard.cpp evaluate.cpp memory.cpp misc.cpp
+  movegen.cpp movepick.cpp position.cpp score.cpp search.cpp thread.cpp
+  timeman.cpp tt.cpp tune.cpp uci.cpp ucioption.cpp
+  external/common/debug.cpp
+  external/common/entropy_common.cpp
+  external/common/error_private.cpp
+  external/common/fse_decompress.cpp
+  external/common/pool.cpp
+  external/common/threading.cpp
+  external/common/xxhash.cpp
+  external/common/zstd_common.cpp
+  external/decompress/huf_decompress.cpp
+  external/decompress/huf_decompress_amd64.S
+  external/decompress/zstd_ddict.cpp
+  external/decompress/zstd_decompress.cpp
+  external/decompress/zstd_decompress_block.cpp
+  nnue/features/full_threats.cpp
+  nnue/features/half_ka_v2_hm.cpp
+  nnue/network.cpp
+  nnue/nnue_accumulator.cpp
+  nnue/nnue_misc.cpp)
 list(TRANSFORM PIKAFISH_SOURCES PREPEND ${PIKAFISH_SRC_DIR}/)
-list(APPEND PIKAFISH_SOURCES ${PIKAFISH_GENERATED_MAIN})
+list(APPEND PIKAFISH_SOURCES
+  ${PIKAFISH_GENERATED_MAIN}
+  ${PIKAFISH_GENERATED_ENGINE})
 
 find_package(Threads REQUIRED)
 
 add_library(pikafish_core STATIC ${PIKAFISH_SOURCES})
 target_include_directories(pikafish_core PUBLIC ${PIKAFISH_SRC_DIR})
-target_compile_definitions(pikafish_core PRIVATE NDEBUG USE_PTHREADS)
+target_compile_definitions(pikafish_core PRIVATE NDEBUG)
 target_compile_options(pikafish_core PRIVATE
   -Wall -Wcast-qual -fno-exceptions -O3)
 target_link_libraries(pikafish_core PUBLIC Threads::Threads)

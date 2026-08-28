@@ -15,28 +15,22 @@
 #      measurement showed ~957k vs ~889k nps for the two ARCHs above. Reported,
 #      not enforced: it is load-sensitive and not reproducible enough to gate.
 #
-# Usage: tools/bench_parity.sh [MAKEFILE_ARCH]     (default: x86-64-modern)
+# Usage: tools/bench_parity.sh [MAKEFILE_ARCH]
+#        (default: x86-64-sse41-popcnt)
 set -euo pipefail
 
-ARCH="${1:-x86-64-modern}"
+ARCH="${1:-x86-64-sse41-popcnt}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUB="$ROOT/third_party/Pikafish-HCE"
+SUB="$ROOT/third_party/Pikafish"
+MODEL="$ROOT/../../assets/engine/pikafish.nnue"
 WORK="$(mktemp -d)"
 
-# The CMake build needs the patch applied, but leaving the submodule dirty
-# afterwards makes every later `git status` noisy and looks like uncommitted
-# work. Restore whatever state we found, unless the caller had already patched.
-PATCH_WAS_APPLIED=no
-if git -C "$SUB" apply --reverse --check "$ROOT/patches/0001-rename-main.patch" 2>/dev/null; then
-  PATCH_WAS_APPLIED=yes
-fi
 cleanup() {
   rm -rf "$WORK"
-  if [ "$PATCH_WAS_APPLIED" = no ]; then
-    git -C "$SUB" checkout -- src/main.cpp 2>/dev/null || true
-  fi
 }
 trap cleanup EXIT
+
+[ -f "$MODEL" ] || { echo "missing NNUE model: $MODEL" >&2; exit 1; }
 
 jobs="$( (nproc || sysctl -n hw.ncpu || echo 2) 2>/dev/null )"
 
@@ -49,13 +43,13 @@ defines_from() { tr ' ' '\n' < "$1" | { grep -E '^-D' || true; } | sort -u | tr 
 echo "==> reference build (Makefile, ARCH=$ARCH)"
 mkdir -p "$WORK/ref"
 git -C "$SUB" archive HEAD src | tar -x -C "$WORK/ref"
+cp "$MODEL" "$WORK/ref/src/pikafish.nnue"
 make -C "$WORK/ref/src" -n build ARCH="$ARCH" 2>/dev/null \
   | grep -m1 'evaluate\.cpp' > "$WORK/ref.cmd" || true
 make -C "$WORK/ref/src" -j"$jobs" build ARCH="$ARCH" >"$WORK/ref.log" 2>&1 \
   || { echo "reference build failed:"; tail -30 "$WORK/ref.log"; exit 1; }
 
 echo "==> cmake build"
-"$ROOT/tools/apply_patches.sh" >/dev/null
 cmake -S "$ROOT/src" -B "$WORK/cmake" -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON >"$WORK/cm.log" 2>&1 \
   && cmake --build "$WORK/cmake" -j"$jobs" >>"$WORK/cm.log" 2>&1 \
@@ -71,7 +65,8 @@ for e in db:
 ref_defs="$(defines_from "$WORK/ref.cmd")"
 cmake_defs="$(defines_from "$WORK/cmake.cmd")"
 
-bench() { "$1" bench 2>&1 | tail -20; }
+cp "$MODEL" "$WORK/cmake/pikafish.nnue"
+bench() { (cd "$(dirname "$1")" && "./$(basename "$1")" bench) 2>&1 | tail -20; }
 bench "$WORK/ref/src/pikafish"       > "$WORK/ref.bench"
 bench "$WORK/cmake/pikafish_cli"     > "$WORK/cmake.bench"
 field() { sed -n "s/^$2 *: *//p" "$1" | tail -1; }

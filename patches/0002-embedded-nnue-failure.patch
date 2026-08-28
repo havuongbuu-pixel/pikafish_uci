@@ -1,0 +1,17 @@
+diff --git a/src/engine.cpp b/src/engine.cpp
+--- a/src/engine.cpp
++++ b/src/engine.cpp
+@@
+ void Engine::go(Search::LimitsType& limits) {
+     assert(limits.perft == 0);
++    const auto evalFile = path_from_utf8(std::string(options["EvalFile"]));
++    if (networkFile.current != evalFile)
++    {
++        if (onVerifyNetwork)
++            onVerifyNetwork("PIKAFISH_NNUE_LOAD_FAILED");
++        updateContext.onBestmove("(none)", "");
++        return;
++    }
+     verify_network();
+     threads.start_thinking(pos, states, limits);
+ }

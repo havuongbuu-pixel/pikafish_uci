@@ -1,5 +1,5 @@
 name: pikafish_uci
-description: Pikafish HCE xiangqi engine exposed to Flutter over FFI.
+description: Official Pikafish NNUE xiangqi engine exposed to Flutter over FFI.
 version: 0.1.0
 publish_to: 'none'
 

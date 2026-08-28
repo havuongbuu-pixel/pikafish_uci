@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
-"""Measures how much strength UCI_Elo actually removes, to pick the app's
-difficulty mapping from data instead of from guesswork.
+"""Measure the app's NNUE MultiPV difficulty profiles against a stronger search.
 
-Method, for each Elo setting and each test position:
+The selection logic mirrors PikafishMoveGateway: hard takes rank 1, normal
+selects deterministically within 80 cp from MultiPV 3, and easy avoids rank 1
+when a MultiPV 5 candidate remains within 220 cp. The report measures the
+selected move with a longer reference search; it does not claim human Elo.
 
-  1. Ask the limited engine for a move at a fixed movetime.
-  2. Score that move with a full-strength reference search: play it, search the
-     reply, negate. Centipawn loss is the reference best score minus that.
-
-Centipawn loss is the right measure for a game opponent. What makes a bot feel
-weak is not its average score but how often it throws material away, so the
-report carries the blunder rate alongside the mean.
-
-Usage: calibrate_strength.py <pikafish_cli> [--positions N] [--movetime MS]
+Usage:
+  calibrate_strength.py <pikafish_cli> <pikafish.nnue> [--positions N]
 """
+
 import argparse
 import random
 import re
@@ -21,35 +17,47 @@ import subprocess
 import sys
 
 MATE = 30000
+START = (
+    "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/"
+    "RNBAKABNR w - - 0 1"
+)
+PROFILES = (
+    ("easy", 300, 5, 220),
+    ("normal", 600, 3, 80),
+    ("hard", 1200, 1, 0),
+)
 
 
 class Engine:
-    def __init__(self, path):
+    def __init__(self, path, eval_file):
         self.proc = subprocess.Popen(
-            [path], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            text=True, bufsize=1,
+            [path],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            bufsize=1,
         )
         self.send("uci")
-        self._read_until("uciok")
-        # Pin the rules the app pins, so measurements match shipped behaviour.
-        for opt, val in (("Sixty Move Rule", "true"),
-                         ("Chase With Check", "true"),
-                         ("Strict Three Fold", "false"),
-                         ("Threads", "1"), ("Hash", "16")):
-            self.send(f"setoption name {opt} value {val}")
+        uci_lines = self._read_until("uciok")
+        if not any(line.startswith("option name EvalFile type ")
+                   for line in uci_lines):
+            raise RuntimeError("engine does not advertise EvalFile")
+        self.send("setoption name Threads value 1")
+        self.send("setoption name Hash value 16")
+        self.send(f"setoption name EvalFile value {eval_file}")
         self.ready()
 
-    def send(self, cmd):
-        self.proc.stdin.write(cmd + "\n")
+    def send(self, command):
+        self.proc.stdin.write(command + "\n")
         self.proc.stdin.flush()
 
     def _read_until(self, token):
-        out = []
-        for line in self.proc.stdout:
-            line = line.strip()
-            out.append(line)
+        output = []
+        for raw_line in self.proc.stdout:
+            line = raw_line.strip()
+            output.append(line)
             if line.split(" ")[0] == token:
-                return out
+                return output
         raise RuntimeError("engine exited unexpectedly")
 
     def ready(self):
@@ -60,26 +68,13 @@ class Engine:
         self.send("ucinewgame")
         self.ready()
 
-    def set_elo(self, elo):
-        self.send(f"setoption name UCI_LimitStrength value "
-                  f"{'true' if elo else 'false'}")
-        if elo:
-            self.send(f"setoption name UCI_Elo value {elo}")
-        self.ready()
-
-    def set_skill(self, level):
-        """Skill Level is the other weakening knob, and unlike UCI_Elo it is
-        not calibrated to a rating. Both are measured so the choice is made on
-        evidence rather than on which one has the friendlier name."""
-        self.send("setoption name UCI_LimitStrength value false")
-        self.send(f"setoption name Skill Level value {level}")
-        self.ready()
-
-    def search(self, fen, movetime, moves=""):
-        self.send(f"position fen {fen}" + (f" moves {moves}" if moves else ""))
+    def search(self, fen, movetime, multipv=1, moves=""):
+        self.send(f"setoption name MultiPV value {multipv}")
+        suffix = f" moves {moves}" if moves else ""
+        self.send(f"position fen {fen}{suffix}")
         self.send(f"go movetime {movetime}")
         lines = self._read_until("bestmove")
-        return _best_move(lines), _score(lines)
+        return _best_move(lines), _variations(lines)
 
     def fen_after(self, fen, moves):
         self.send(f"position fen {fen} moves {moves}")
@@ -89,24 +84,12 @@ class Engine:
                 return line[4:].strip()
         raise RuntimeError("no FEN in display output")
 
-    def multipv_moves(self, fen, depth, count):
-        """Depth-limited on purpose. Generating positions with a movetime makes
-        the position set depend on how busy the machine was, so two runs of this
-        script would not measure the same thing."""
+    def depth_candidates(self, fen, depth, count):
         self.send(f"setoption name MultiPV value {count}")
         self.send(f"position fen {fen}")
         self.send(f"go depth {depth}")
         lines = self._read_until("bestmove")
-        self.send("setoption name MultiPV value 1")
-        best = {}
-        for line in lines:
-            if not line.startswith("info ") or " pv " not in line:
-                continue
-            rank = re.search(r"multipv (\d+)", line)
-            pv = line.split(" pv ", 1)[1].split()
-            if rank and pv:
-                best[int(rank.group(1))] = pv[0]
-        return [best[k] for k in sorted(best)]
+        return [item["move"] for item in _variations(lines) if item["move"]]
 
     def quit(self):
         self.send("quit")
@@ -121,39 +104,71 @@ def _best_move(lines):
     return None
 
 
-def _score(lines):
-    """Score of the principal variation, side-to-move relative."""
-    for line in reversed(lines):
-        if not line.startswith("info ") or "score" not in line:
+def _variations(lines):
+    latest = {}
+    for line in lines:
+        if not line.startswith("info ") or " pv " not in line:
             continue
-        if re.search(r"multipv (\d+)", line) and \
-                re.search(r"multipv (\d+)", line).group(1) != "1":
+        pv = line.split(" pv ", 1)[1].split()
+        if not pv:
             continue
-        cp = re.search(r"score cp (-?\d+)", line)
-        if cp:
-            return int(cp.group(1))
-        mate = re.search(r"score mate (-?\d+)", line)
-        if mate:
-            n = int(mate.group(1))
-            return MATE - abs(n) if n > 0 else -(MATE - abs(n))
-    return None
+        rank_match = re.search(r"\bmultipv (\d+)", line)
+        rank = int(rank_match.group(1)) if rank_match else 1
+        cp_match = re.search(r"\bscore cp (-?\d+)", line)
+        mate_match = re.search(r"\bscore mate (-?\d+)", line)
+        latest[rank] = {
+            "rank": rank,
+            "move": pv[0],
+            "cp": int(cp_match.group(1)) if cp_match else None,
+            "mate": int(mate_match.group(1)) if mate_match else None,
+        }
+    return [latest[rank] for rank in sorted(latest)]
 
 
-START = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"
+def _score(variation):
+    if variation is None:
+        return None
+    mate = variation["mate"]
+    if mate is not None:
+        return MATE - abs(mate) if mate > 0 else -(MATE - abs(mate))
+    return variation["cp"]
+
+
+def _acceptable(best, candidate, max_loss):
+    if candidate["rank"] == best["rank"]:
+        return True
+    if best["mate"] is not None:
+        return (best["mate"] > 0 and candidate["mate"] is not None
+                and candidate["mate"] > 0)
+    if candidate["mate"] is not None:
+        return candidate["mate"] > 0
+    return (best["cp"] is not None and candidate["cp"] is not None
+            and best["cp"] - candidate["cp"] <= max_loss)
+
+
+def _stable_index(value, length):
+    value_hash = 0x811C9DC5
+    for byte in value.encode("ascii"):
+        value_hash ^= byte
+        value_hash = (value_hash * 0x01000193) & 0xFFFFFFFF
+    return value_hash % length
+
+
+def select_move(variations, fen, profile, max_loss):
+    if not variations:
+        return None
+    if profile == "hard":
+        return variations[0]["move"]
+    acceptable = [candidate for candidate in variations
+                  if _acceptable(variations[0], candidate, max_loss)]
+    if not acceptable:
+        return variations[0]["move"]
+    pool = acceptable[1:] if profile == "easy" and len(acceptable) > 1 \
+        else acceptable
+    return pool[_stable_index(f"{fen}|{profile}", len(pool))]["move"]
 
 
 def make_positions(engine, count, seed=7):
-    """Walks away from the start position along varied but sane lines.
-
-    Sampling from MultiPV rather than playing random legal moves keeps the
-    positions realistic; measuring a bot on nonsense positions would say
-    nothing about how it plays a game.
-
-    The walk is deterministic — fixed seed, fixed search depth — so two runs
-    measure the same positions and their numbers can be compared. Note that a
-    run at N positions is a prefix of a run at more, so those are comparable
-    too.
-    """
     rng = random.Random(seed)
     positions, moves = [], []
     engine.new_game()
@@ -161,7 +176,7 @@ def make_positions(engine, count, seed=7):
         fen = engine.fen_after(START, " ".join(moves)) if moves else START
         if len(moves) >= 6:
             positions.append(fen)
-        candidates = engine.multipv_moves(fen, 6, 4)
+        candidates = engine.depth_candidates(fen, 6, 4)
         if not candidates:
             moves = []
             continue
@@ -172,83 +187,80 @@ def make_positions(engine, count, seed=7):
     return positions
 
 
-def reference_loss(ref, fen, move, movetime, best_score, cache):
+def reference_loss(engine, fen, move, movetime, best_score, cache):
     key = (fen, move)
     if key in cache:
         return cache[key]
-    _, reply = ref.search(fen, movetime, moves=move)
-    value = -reply if reply is not None else None
-    loss = None if value is None or best_score is None else max(0, best_score - value)
+    _, variations = engine.search(fen, movetime, moves=move)
+    reply_score = _score(variations[0]) if variations else None
+    value = -reply_score if reply_score is not None else None
+    loss = None if value is None or best_score is None \
+        else max(0, best_score - value)
     cache[key] = loss
     return loss
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("engine")
-    ap.add_argument("--positions", type=int, default=24)
-    ap.add_argument("--movetime", type=int, default=250)
-    ap.add_argument("--reference-movetime", type=int, default=800)
-    ap.add_argument("--knob", choices=["elo", "skill"], default="elo")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("engine")
+    parser.add_argument("eval_file")
+    parser.add_argument("--positions", type=int, default=24)
+    parser.add_argument("--reference-movetime", type=int, default=2000)
+    args = parser.parse_args()
 
-    settings = ([1350, 1600, 1900, 2200, 2500, 2850, None]
-                if args.knob == "elo" else [0, 3, 5, 8, 10, 14, 20])
-
-    gen = Engine(args.engine)
-    positions = make_positions(gen, args.positions)
-    gen.quit()
+    generator = Engine(args.engine, args.eval_file)
+    positions = make_positions(generator, args.positions)
+    generator.quit()
     print(f"positions: {len(positions)}", file=sys.stderr)
 
-    ref = Engine(args.engine)
-    ref.set_elo(None)
+    reference = Engine(args.engine, args.eval_file)
     best = {}
     for fen in positions:
-        ref.new_game()
-        best[fen] = ref.search(fen, args.reference_movetime)
+        reference.new_game()
+        ref_move, variations = reference.search(fen, args.reference_movetime)
+        best[fen] = (
+            ref_move,
+            _score(variations[0]) if variations else None,
+        )
 
-    subject = Engine(args.engine)
-    cache = {}
-    rows = []
-    for elo in settings:
-        if args.knob == "elo":
-            subject.set_elo(elo)
-        else:
-            subject.set_skill(elo)
-        losses, agree = [], 0
+    subject = Engine(args.engine, args.eval_file)
+    cache, rows = {}, []
+    for profile, movetime, multipv, max_loss in PROFILES:
+        losses, agreement = [], 0
         for fen in positions:
             subject.new_game()
-            move, _ = subject.search(fen, args.movetime)
-            ref_move, ref_score = best[fen]
+            _, variations = subject.search(fen, movetime, multipv=multipv)
+            move = select_move(variations, fen, profile, max_loss)
             if move is None:
                 continue
+            ref_move, best_score = best[fen]
             if move == ref_move:
-                agree += 1
+                agreement += 1
                 losses.append(0)
                 continue
-            loss = reference_loss(ref, fen, move, args.reference_movetime,
-                                  ref_score, cache)
+            loss = reference_loss(reference, fen, move,
+                                  args.reference_movetime, best_score, cache)
             if loss is not None:
                 losses.append(min(loss, 2000))
         losses.sort()
-        n = len(losses) or 1
-        rows.append({
-            "elo": elo,
-            "mean": sum(losses) / n,
-            "median": losses[n // 2] if losses else 0,
-            "blunders": 100.0 * sum(1 for x in losses if x > 200) / n,
-            "agree": 100.0 * agree / n,
-        })
+        sample_count = len(losses) or 1
+        rows.append((
+            profile,
+            movetime,
+            multipv,
+            sum(losses) / sample_count,
+            losses[len(losses) // 2] if losses else 0,
+            100.0 * sum(loss > 200 for loss in losses) / sample_count,
+            100.0 * agreement / sample_count,
+        ))
 
     subject.quit()
-    ref.quit()
+    reference.quit()
 
-    print(f"{args.knob:>6} {'mean cp loss':>13} {'median':>7} "
-          f"{'blunder>200':>12} {'top-move agree':>15}")
-    for r in rows:
-        label = r["elo"] if r["elo"] is not None else "full"
-        print(f"{label:>6} {r['mean']:>13.1f} {r['median']:>7.0f} "
-              f"{r['blunders']:>11.0f}% {r['agree']:>14.0f}%")
+    print("profile  time  pv  mean loss  median  blunder>200  top agreement")
+    for row in rows:
+        print(f"{row[0]:>7} {row[1]:>5} {row[2]:>3} {row[3]:>10.1f} "
+              f"{row[4]:>7.0f} {row[5]:>11.0f}% {row[6]:>13.0f}%")
 
 
 if __name__ == "__main__":

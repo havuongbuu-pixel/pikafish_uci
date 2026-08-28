@@ -7,9 +7,8 @@
 # an app that linked "successfully" with none of the engine's code in it. This
 # is exactly what the vanilla `flutter create --template=plugin_ffi` template
 # works around with a `Classes/` forwarder that `#include`s a single file from
-# `../src`; this plugin has 18 translation units (17 engine sources plus the
-# bridge) instead of one, so this generates one forwarder per file instead of
-# hand-maintaining 18 of them.
+# `../src`; this plugin has dozens of translation units (including NNUE and
+# Zstandard) instead of one, so this generates one forwarder per file.
 #
 # main.cpp needs actual text surgery, not just forwarding — Pikafish's own
 # main() must become pikafish_main() before anything can link against
@@ -22,21 +21,62 @@ require 'fileutils'
 
 module PikafishSources
   ENGINE_SOURCES = %w[
-    benchmark bitboard evaluate material misc movegen movepick position
-    psqt endgame search thread timeman tt uci ucioption tune
+    attacks.cpp
+    benchmark.cpp
+    bitboard.cpp
+    evaluate.cpp
+    memory.cpp
+    misc.cpp
+    movegen.cpp
+    movepick.cpp
+    position.cpp
+    score.cpp
+    search.cpp
+    thread.cpp
+    timeman.cpp
+    tt.cpp
+    tune.cpp
+    uci.cpp
+    ucioption.cpp
+    external/common/debug.cpp
+    external/common/entropy_common.cpp
+    external/common/error_private.cpp
+    external/common/fse_decompress.cpp
+    external/common/pool.cpp
+    external/common/threading.cpp
+    external/common/xxhash.cpp
+    external/common/zstd_common.cpp
+    external/decompress/huf_decompress.cpp
+    external/decompress/huf_decompress_amd64.S
+    external/decompress/zstd_ddict.cpp
+    external/decompress/zstd_decompress.cpp
+    external/decompress/zstd_decompress_block.cpp
+    nnue/features/full_threats.cpp
+    nnue/features/half_ka_v2_hm.cpp
+    nnue/network.cpp
+    nnue/nnue_accumulator.cpp
+    nnue/nnue_misc.cpp
   ].freeze
 
   def self.generate!(pod_dir)
-    pikafish_src = File.expand_path(File.join(pod_dir, '..', 'third_party', 'Pikafish-HCE', 'src'))
+    pikafish_src = File.expand_path(File.join(pod_dir, '..', 'third_party', 'Pikafish', 'src'))
     bridge_src = File.expand_path(File.join(pod_dir, '..', 'src', 'pikafish_bridge.cpp'))
     out_dir = File.join(pod_dir, 'generated')
     FileUtils.mkdir_p(out_dir)
 
+    expected = ENGINE_SOURCES.map { |relative| relative.tr('/', '__') }
+    expected.concat(%w[pikafish_bridge.cpp pikafish_main.cpp pikafish_engine.cpp])
+    Dir.children(out_dir).each do |entry|
+      FileUtils.rm_f(File.join(out_dir, entry)) unless expected.include?(entry)
+    end
+
     write_forwarder(File.join(out_dir, 'pikafish_bridge.cpp'), bridge_src)
-    ENGINE_SOURCES.each do |name|
-      write_forwarder(File.join(out_dir, "#{name}.cpp"), File.join(pikafish_src, "#{name}.cpp"))
+    ENGINE_SOURCES.each do |relative|
+      output_name = relative.tr('/', '__')
+      write_forwarder(File.join(out_dir, output_name), File.join(pikafish_src, relative))
     end
     GeneratedMain.generate!(pod_dir, pikafish_src)
+    GeneratedEngine.generate!(pod_dir, pikafish_src)
   end
 
   def self.write_forwarder(output_path, real_path)
@@ -59,7 +99,7 @@ module PikafishSources
       output_path = File.join(pod_dir, 'generated', 'pikafish_main.cpp')
 
       unless File.exist?(input_path)
-        raise "pikafish_uci: Pikafish-HCE sources missing at #{input_path}. " \
+        raise "pikafish_uci: official Pikafish sources missing at #{input_path}. " \
               'Run: git submodule update --init --recursive'
       end
 
@@ -72,20 +112,69 @@ module PikafishSources
       end
       old_line = removed.first
       new_line = added.first
+      old_definition = "#{old_line}\n"
+      new_definition = "#{new_line}\n"
 
       source = File.read(input_path)
-      old_count = source.scan(Regexp.new(Regexp.escape(old_line))).length
-      new_count = source.scan(Regexp.new(Regexp.escape(new_line))).length
+      old_count = source.scan(Regexp.new(Regexp.escape(old_definition))).length
+      new_count = source.scan(Regexp.new(Regexp.escape(new_definition))).length
 
       result =
         if old_count == 1 && new_count.zero?
-          source.sub(old_line, new_line)
+          source.sub(old_definition, new_definition)
         elsif old_count.zero? && new_count == 1
           # Also accept a tree patched manually by tools/apply_patches.sh.
           source
         else
           raise 'pikafish_uci: main.cpp matches neither side of the published ' \
                 "entry-point patch (main=#{old_count}, pikafish_main=#{new_count})"
+        end
+
+      File.write(output_path, result) unless File.exist?(output_path) && File.read(output_path) == result
+    end
+  end
+
+  module GeneratedEngine
+    OLD_TEXT = <<~'CPP'.strip.freeze
+      void Engine::go(Search::LimitsType& limits) {
+          assert(limits.perft == 0);
+          verify_network();
+
+          threads.start_thinking(pos, states, limits);
+      }
+    CPP
+
+    NEW_TEXT = <<~'CPP'.strip.freeze
+      void Engine::go(Search::LimitsType& limits) {
+          assert(limits.perft == 0);
+          const auto evalFile = path_from_utf8(std::string(options["EvalFile"]));
+          if (networkFile.current != evalFile)
+          {
+              if (onVerifyNetwork)
+                  onVerifyNetwork("PIKAFISH_NNUE_LOAD_FAILED");
+              updateContext.onBestmove("(none)", "");
+              return;
+          }
+          verify_network();
+
+          threads.start_thinking(pos, states, limits);
+      }
+    CPP
+
+    def self.generate!(pod_dir, pikafish_src)
+      input_path = File.join(pikafish_src, 'engine.cpp')
+      output_path = File.join(pod_dir, 'generated', 'pikafish_engine.cpp')
+      patch_path = File.join(pod_dir, '..', 'patches', '0002-embedded-nnue-failure.patch')
+
+      raise "pikafish_uci: expected patch missing at #{patch_path}" unless File.exist?(patch_path)
+      source = File.read(input_path)
+      result =
+        if source.include?(OLD_TEXT)
+          source.sub(OLD_TEXT, NEW_TEXT)
+        elsif source.include?(NEW_TEXT)
+          source
+        else
+          raise 'pikafish_uci: upstream Engine::go no longer matches the reviewed embedded patch'
         end
 
       File.write(output_path, result) unless File.exist?(output_path) && File.read(output_path) == result

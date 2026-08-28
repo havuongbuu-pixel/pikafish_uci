@@ -1,4 +1,4 @@
-/// Pikafish HCE, driven over UCI from Flutter.
+/// Official Pikafish NNUE, driven over UCI from Flutter.
 library;
 
 export 'src/bindings.dart' show PikafishStatus;

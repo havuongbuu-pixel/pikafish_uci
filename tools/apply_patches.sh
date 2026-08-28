@@ -1,29 +1,27 @@
 #!/usr/bin/env bash
-# Applies packages/pikafish_uci/patches/*.patch to the Pikafish-HCE submodule.
-# Idempotent: safe to re-run, and a no-op when the patch is already applied.
+# Backwards-compatible validation entry point.
+#
+# The official Pikafish submodule stays pristine. CMake and CocoaPods generate
+# patched translation units in their own build directories, so this command now
+# validates those generators instead of editing third_party in place.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUB="$ROOT/third_party/Pikafish-HCE"
+SUB="$ROOT/third_party/Pikafish"
 
 if [ ! -f "$SUB/src/main.cpp" ]; then
-  echo "error: submodule not checked out. Run:" >&2
+  echo "error: official Pikafish submodule not checked out. Run:" >&2
   echo "  git submodule update --init --recursive" >&2
   exit 1
 fi
 
-for patch in "$ROOT"/patches/*.patch; do
-  [ -e "$patch" ] || continue
-  name="$(basename "$patch")"
-  if git -C "$SUB" apply --reverse --check "$patch" 2>/dev/null; then
-    echo "already applied: $name"
-  elif git -C "$SUB" apply --check "$patch" 2>/dev/null; then
-    git -C "$SUB" apply "$patch"
-    echo "applied:         $name"
-  else
-    echo "error: $name applies neither forward nor in reverse." >&2
-    echo "The submodule may be at an unexpected commit. Check:" >&2
-    echo "  git -C $SUB rev-parse HEAD" >&2
-    exit 1
-  fi
-done
+ruby -c "$ROOT/src/generate_pikafish_sources.rb" >/dev/null
+ruby -e \
+  'require ARGV[0]; PikafishSources.generate!(File.expand_path(ARGV[1]))' \
+  "$ROOT/src/generate_pikafish_sources.rb" \
+  "$ROOT/macos"
+
+grep -q 'int pikafish_main(' "$ROOT/macos/generated/pikafish_main.cpp"
+grep -q 'PIKAFISH_NNUE_LOAD_FAILED' "$ROOT/macos/generated/pikafish_engine.cpp"
+
+echo "generated Pikafish patches validated; submodule left pristine"

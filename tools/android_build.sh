@@ -22,27 +22,18 @@ NDK="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
 [ -d "$NDK" ] || { echo "no such NDK: $NDK" >&2; exit 1; }
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUB="$ROOT/third_party/Pikafish-HCE"
+SUB="$ROOT/third_party/Pikafish"
 OUT="${OUT_DIR:-$(mktemp -d)}"
 API="${ANDROID_API:-21}"
 TOOLS="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 [ -d "$TOOLS" ] || TOOLS="$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin"
 
-PATCH_WAS_APPLIED=no
-if git -C "$SUB" apply --reverse --check "$ROOT/patches/0001-rename-main.patch" 2>/dev/null; then
-  PATCH_WAS_APPLIED=yes
-fi
 cleanup() {
   [ -n "${OUT_DIR:-}" ] || rm -rf "$OUT"
-  if [ "$PATCH_WAS_APPLIED" = no ]; then
-    git -C "$SUB" checkout -- src/main.cpp 2>/dev/null || true
-  fi
 }
 trap cleanup EXIT
 
 jobs="$( (nproc || sysctl -n hw.ncpu || echo 2) 2>/dev/null )"
-"$ROOT/tools/apply_patches.sh" >/dev/null
-
 # Upstream reference sources, unpatched, for the `make -n` define query.
 mkdir -p "$OUT/ref"
 git -C "$SUB" archive HEAD src | tar -x -C "$OUT/ref"
@@ -54,7 +45,7 @@ abi_arch() {
   case "$1" in
     arm64-v8a)   echo "armv8 ndk" ;;
     armeabi-v7a) echo "armv7-neon ndk" ;;
-    x86_64)      echo "x86-64-modern host" ;;
+    x86_64)      echo "x86-64-sse41-popcnt host" ;;
   esac
 }
 
