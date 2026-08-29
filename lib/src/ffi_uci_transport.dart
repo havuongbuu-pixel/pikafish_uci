@@ -27,6 +27,14 @@ final class PikafishTransport implements UciTransport {
 
   static bool _startedInThisProcess = false;
 
+  /// Physical RAM visible to the process, without starting the engine.
+  ///
+  /// Zero means the native platform could not report it; callers must retain
+  /// conservative settings in that case.
+  static int physicalMemoryMb({String? libraryPath}) => PikafishBindings(
+    PikafishBindings.openLibrary(path: libraryPath),
+  ).physicalMemoryMb();
+
   /// Starts the engine and begins pumping its output.
   ///
   /// [libraryPath] overrides library lookup, for desktop builds and tests.
@@ -135,7 +143,9 @@ void _readLoop(_ReaderConfig config) {
       final read = bindings.read(buffer, bufferSize);
       if (read <= 0) break; // 0 = engine exited; negative = pipe error.
 
-      pending.write(utf8.decode(buffer.asTypedList(read), allowMalformed: true));
+      pending.write(
+        utf8.decode(buffer.asTypedList(read), allowMalformed: true),
+      );
       final text = pending.toString();
       pending.clear();
 

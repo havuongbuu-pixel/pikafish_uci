@@ -7,6 +7,12 @@
 #include <pthread.h>
 #include <unistd.h>
 
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#elif defined(__linux__) || defined(__ANDROID__)
+#include <sys/sysinfo.h>
+#endif
+
 // Renamed from main() by patches/0001-rename-main.patch. C++ linkage, matching
 // the declaration in the engine's own main.cpp.
 int pikafish_main(int argc, char* argv[]);
@@ -114,6 +120,23 @@ int pikafish_start(void) {
 }
 
 int pikafish_is_running(void) { return g_running.load() ? 1 : 0; }
+
+int64_t pikafish_physical_memory_mb(void) {
+#if defined(__APPLE__)
+  uint64_t bytes = 0;
+  size_t size = sizeof(bytes);
+  if (::sysctlbyname("hw.memsize", &bytes, &size, nullptr, 0) != 0) return 0;
+  return static_cast<int64_t>(bytes / (1024ULL * 1024ULL));
+#elif defined(__linux__) || defined(__ANDROID__)
+  struct sysinfo info {};
+  if (::sysinfo(&info) != 0) return 0;
+  const uint64_t bytes =
+      static_cast<uint64_t>(info.totalram) * info.mem_unit;
+  return static_cast<int64_t>(bytes / (1024ULL * 1024ULL));
+#else
+  return 0;
+#endif
+}
 
 int pikafish_write(const char* command) {
   if (!g_started || g_to_engine_write < 0) return PIKAFISH_ERR_NOT_STARTED;

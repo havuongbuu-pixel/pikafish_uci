@@ -6,7 +6,7 @@
 # docs/engine/pikafish_hce_integration_plan.md §3.1 and
 # pikafish_flutter_project_structure.md §8 — those docs assume a *static*
 # framework, but that turns out not to work for a plugin with no Swift/ObjC
-# entry point: nothing in the app statically references the four bridge
+# entry point: nothing in the app statically references the five bridge
 # functions (Dart finds them by name at runtime), so the linker never pulls
 # their object files out of a static archive at all, `used` attribute or not
 # — confirmed empirically on macOS (see integration_test/pikafish_smoke_test.dart,
@@ -49,6 +49,16 @@ Pod::Spec.new do |s|
     'HEADER_SEARCH_PATHS' => '$(PODS_TARGET_SRCROOT)/../third_party/Pikafish/src',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++',
+    # Reproducible winner of tools/benchmark_apple_optimizations.sh. PGO was
+    # only ~1% faster and its profdata is tied to the producing Xcode version;
+    # Full LTO is the fastest reproducible configuration without a fragile
+    # binary profile.
+    'GCC_OPTIMIZATION_LEVEL[config=Release]' => '3',
+    'GCC_OPTIMIZATION_LEVEL[config=Profile]' => '3',
+    'LLVM_LTO[config=Release]' => 'YES',
+    'LLVM_LTO[config=Profile]' => 'YES',
+    'DEAD_CODE_STRIPPING[config=Release]' => 'YES',
+    'DEAD_CODE_STRIPPING[config=Profile]' => 'YES',
     'GCC_SYMBOLS_PRIVATE_EXTERN' => 'YES',
     # Per-arch defines mirror src/pikafish_arch.cmake's non-Android branches
     # exactly. Verify any change against that file, not this one.
@@ -58,8 +68,8 @@ Pod::Spec.new do |s|
     'GCC_PREPROCESSOR_DEFINITIONS[arch=x86_64]' =>
       '$(inherited) ARCH=x86-64-sse41-popcnt IS_64BIT=1 USE_PREFETCH=1 USE_POPCNT=1 USE_SSE41=1 USE_SSSE3=1 USE_SSE2=1',
     'OTHER_CFLAGS[arch=x86_64]' => '-msse -msse2 -msse3 -mssse3 -msse4.1 -mpopcnt',
-    'OTHER_CPLUSPLUSFLAGS[arch=x86_64]' => '-msse -msse2 -msse3 -mssse3 -msse4.1 -mpopcnt',
+    'OTHER_CPLUSPLUSFLAGS[arch=x86_64]' => '$(inherited) -msse -msse2 -msse3 -mssse3 -msse4.1 -mpopcnt',
   }
-  s.compiler_flags = '-fno-exceptions', '-Wall'
+  s.compiler_flags = '-funroll-loops', '-fno-exceptions', '-Wall'
   s.swift_version = '5.0'
 end

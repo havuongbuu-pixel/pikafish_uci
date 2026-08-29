@@ -25,18 +25,23 @@ abstract final class PikafishStatus {
   };
 }
 
-/// Thin hand-written bindings for the four C entry points.
+/// Thin hand-written bindings for the five C entry points.
 ///
-/// Deliberately not generated: the surface is four stable functions declared in
+/// Deliberately not generated: the surface is five stable functions declared in
 /// a header we own, so ffigen would add a build-time dependency and a generated
 /// file to review without removing any real work.
 final class PikafishBindings {
   PikafishBindings(DynamicLibrary library)
-    : start = library
-          .lookupFunction<Int32 Function(), int Function()>('pikafish_start'),
+    : start = library.lookupFunction<Int32 Function(), int Function()>(
+        'pikafish_start',
+      ),
       isRunning = library.lookupFunction<Int32 Function(), int Function()>(
         'pikafish_is_running',
       ),
+      physicalMemoryMb = library
+          .lookupFunction<Int64 Function(), int Function()>(
+            'pikafish_physical_memory_mb',
+          ),
       _write = library
           .lookupFunction<
             Int32 Function(Pointer<Utf8>),
@@ -50,6 +55,7 @@ final class PikafishBindings {
 
   final int Function() start;
   final int Function() isRunning;
+  final int Function() physicalMemoryMb;
   final int Function(Pointer<Utf8>) _write;
   final int Function(Pointer<Uint8>, int) read;
 
@@ -64,8 +70,8 @@ final class PikafishBindings {
 
   /// Opens the native library for the current platform.
   ///
-  /// iOS and macOS link the engine into the app binary as a static framework,
-  /// so its symbols are already in the process. Android and desktop load a
+  /// iOS and macOS load the embedded engine framework into the app process,
+  /// so its symbols are already visible there. Android and desktop load a
   /// shared object. [path] overrides the lookup for tests and desktop builds.
   static DynamicLibrary openLibrary({String? path}) {
     if (path != null) return DynamicLibrary.open(path);

@@ -8,7 +8,7 @@
 #   2. 16 KB PAGE ALIGNMENT of the shipped .so. Google Play rejects unaligned
 #      native libraries for apps targeting Android 15+. Verified on the
 #      artifact, never assumed from the toolchain version.
-#   3. EXPORTED SYMBOLS, exactly the four FFI functions and nothing else.
+#   3. EXPORTED SYMBOLS, exactly the five FFI functions and nothing else.
 #   4. STRIPPED SIZE, recorded so APK growth is a number and not a guess.
 #
 # Requires ANDROID_NDK_HOME (or ANDROID_NDK_ROOT) pointing at an NDK r27+.
@@ -117,7 +117,7 @@ for e in json.load(open(sys.argv[1])):
   syms="$("$TOOLS/llvm-readelf" --dyn-syms "$so" \
     | awk '$4 == "FUNC" && $5 == "GLOBAL" && $7 != "UND" {print $8}' \
     | sort -u | tr '\n' ' ')"
-  expected="pikafish_is_running pikafish_read pikafish_start pikafish_write "
+  expected="pikafish_is_running pikafish_physical_memory_mb pikafish_read pikafish_start pikafish_write "
   exports=PASS
   [ "$syms" = "$expected" ] || { exports="FAIL"; status=1; }
 

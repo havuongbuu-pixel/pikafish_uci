@@ -29,7 +29,7 @@ src/                      one native tree, every platform reads it
   pikafish_bridge.{h,cpp} pipes + dup2 + pthread; the FFI surface
   pikafish_cli.cpp        desktop entry point (main() was renamed away)
 lib/
-  src/bindings.dart       four hand-written C lookups
+  src/bindings.dart       five hand-written C lookups
   src/uci_transport.dart  the interface everything above depends on
   src/ffi_uci_transport.dart  reader isolate + line assembly
 third_party/Pikafish      official git submodule, pinned
@@ -75,7 +75,7 @@ gradle :pikafish_uci:assembleRelease                   # gate C, packaging half
 
 `android_build.sh` cross-builds every ABI named in `android/build.gradle` and
 checks each one's define set against upstream's Makefile, its 16 KB page
-alignment, and that it exports exactly the four bridge functions. It reads the
+alignment, and that it exports exactly the five bridge functions. It reads the
 ABI list from `build.gradle` on purpose: a second hand-maintained list is how a
 Gradle build ends up shipping an architecture the gate never saw. Run the Gradle
 half too — it exercises the packaging path, which is where that bug showed up.

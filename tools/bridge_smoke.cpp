@@ -94,6 +94,8 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  check("physical memory is reported", pikafish_physical_memory_mb() > 0);
+
   if (pikafish_start() != PIKAFISH_OK) {
     fprintf(stderr, "  pikafish_start failed\n");
     return 1;

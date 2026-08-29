@@ -11,6 +11,8 @@
 #ifndef PIKAFISH_BRIDGE_H
 #define PIKAFISH_BRIDGE_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -41,6 +43,11 @@ PIKAFISH_EXPORT int pikafish_start(void);
 
 // Non-zero while the engine loop is running.
 PIKAFISH_EXPORT int pikafish_is_running(void);
+
+// Physical memory visible to this process, in MiB. Returns 0 when the host
+// platform cannot provide it. This is queried before startup so Flutter can
+// choose a safe hash table and decide whether a two-thread probe is affordable.
+PIKAFISH_EXPORT int64_t pikafish_physical_memory_mb(void);
 
 // Sends one UCI command. A trailing newline is appended when absent.
 PIKAFISH_EXPORT int pikafish_write(const char* command);

@@ -103,7 +103,7 @@ target_compile_options(pikafish_core PRIVATE
   -Wall -Wcast-qual -fno-exceptions -O3)
 target_link_libraries(pikafish_core PUBLIC Threads::Threads)
 pikafish_apply_arch_flags(pikafish_core)
-# Hidden by default so the shared library exports only the four functions
+# Hidden by default so the shared library exports only the five functions
 # marked PIKAFISH_EXPORT. Without this the engine's own renamed entry point
 # leaks into the dynamic symbol table and the FFI contract stops being obvious.
 set_target_properties(pikafish_core PROPERTIES
@@ -142,7 +142,7 @@ if(ANDROID)
     # of libc++ from its dynamic symbol table. That is a well-known source of
     # symbol collisions with other native libraries in the same process.
     # --exclude-libs hides everything that arrived via an archive, including our
-    # own engine core; the four bridge functions are compiled straight into this
+    # own engine core; the five bridge functions are compiled straight into this
     # target and keep their explicit default visibility.
     -Wl,--exclude-libs,ALL)
 endif()
