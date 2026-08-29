@@ -101,6 +101,22 @@ To move to a newer upstream commit: check the submodule out at the new commit,
 update the network manifest when required, then run `apply_patches.sh`,
 `bench_parity.sh`, and the Flutter integration smoke before committing.
 
+## Difficulty calibration
+
+The app measures packaged-engine throughput once on first acquisition and sends
+both node and wall-clock limits, so fast devices keep a stable strength ceiling
+while throttled devices remain responsive. The deterministic calibration tool
+mirrors the app's Easy, Normal, Hard, and Master budgets and MultiPV selector:
+
+```sh
+tools/calibrate_strength.py /path/to/pikafish_nnue /path/to/pikafish.nnue \
+  --positions 96 --reference-movetime 3000
+```
+
+Use `--device-nps N` to exercise the exact adaptive budgets used at a slower
+measured throughput. The result is centipawn-loss evidence against a stronger
+reference search, not a human Elo estimate.
+
 ## License
 
 Pikafish is GPL-3. `patches/` holds every modification made to it, the submodule

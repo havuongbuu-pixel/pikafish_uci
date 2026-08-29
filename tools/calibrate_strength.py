@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Measure the app's NNUE MultiPV difficulty profiles against a stronger search.
 
-The selection logic mirrors PikafishMoveGateway: hard takes rank 1, normal
-selects deterministically within 80 cp from MultiPV 3, and easy avoids rank 1
+The selection logic mirrors PikafishMoveGateway: master takes rank 1, hard and
+normal select deterministically inside 30/80 cp windows, and easy avoids rank 1
 when a MultiPV 5 candidate remains within 220 cp. The report measures the
 selected move with a longer reference search; it does not claim human Elo.
 
@@ -15,6 +15,7 @@ import random
 import re
 import subprocess
 import sys
+import time
 
 MATE = 30000
 START = (
@@ -22,9 +23,11 @@ START = (
     "RNBAKABNR w - - 0 1"
 )
 PROFILES = (
-    ("easy", 300, 5, 220),
-    ("normal", 600, 3, 80),
-    ("hard", 1200, 1, 0),
+    # name, max ms, MultiPV, max selected loss, canonical nodes, node floor
+    ("easy", 450, 5, 220, 120000, 25000),
+    ("normal", 900, 3, 80, 350000, 70000),
+    ("hard", 1800, 2, 30, 900000, 160000),
+    ("master", 4000, 1, 0, 2500000, 400000),
 )
 
 
@@ -68,13 +71,14 @@ class Engine:
         self.send("ucinewgame")
         self.ready()
 
-    def search(self, fen, movetime, multipv=1, moves=""):
+    def search(self, fen, movetime, multipv=1, moves="", nodes=None):
         self.send(f"setoption name MultiPV value {multipv}")
         suffix = f" moves {moves}" if moves else ""
         self.send(f"position fen {fen}{suffix}")
-        self.send(f"go movetime {movetime}")
+        node_limit = f" nodes {nodes}" if nodes is not None else ""
+        self.send(f"go movetime {movetime}{node_limit}")
         lines = self._read_until("bestmove")
-        return _best_move(lines), _variations(lines)
+        return _best_move(lines), _variations(lines), _nodes(lines)
 
     def fen_after(self, fen, moves):
         self.send(f"position fen {fen} moves {moves}")
@@ -125,6 +129,15 @@ def _variations(lines):
     return [latest[rank] for rank in sorted(latest)]
 
 
+def _nodes(lines):
+    values = []
+    for line in lines:
+        match = re.search(r"\bnodes (\d+)", line)
+        if match:
+            values.append(int(match.group(1)))
+    return max(values, default=0)
+
+
 def _score(variation):
     if variation is None:
         return None
@@ -157,7 +170,7 @@ def _stable_index(value, length):
 def select_move(variations, fen, profile, max_loss):
     if not variations:
         return None
-    if profile == "hard":
+    if profile == "master":
         return variations[0]["move"]
     acceptable = [candidate for candidate in variations
                   if _acceptable(variations[0], candidate, max_loss)]
@@ -191,7 +204,7 @@ def reference_loss(engine, fen, move, movetime, best_score, cache):
     key = (fen, move)
     if key in cache:
         return cache[key]
-    _, variations = engine.search(fen, movetime, moves=move)
+    _, variations, _ = engine.search(fen, movetime, moves=move)
     reply_score = _score(variations[0]) if variations else None
     value = -reply_score if reply_score is not None else None
     loss = None if value is None or best_score is None \
@@ -200,12 +213,32 @@ def reference_loss(engine, fen, move, movetime, best_score, cache):
     return loss
 
 
+def measure_nps(engine):
+    engine.new_game()
+    engine.search(START, 1000, nodes=20000)
+    started = time.monotonic()
+    _, _, measured_nodes = engine.search(START, 2000, nodes=80000)
+    elapsed = max(time.monotonic() - started, 0.001)
+    engine.new_game()
+    return round((measured_nodes or 80000) / elapsed)
+
+
+def adaptive_nodes(nps, max_time, canonical, floor):
+    capacity = round(nps * max_time / 1000)
+    return min(canonical, max(floor, capacity))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("engine")
     parser.add_argument("eval_file")
     parser.add_argument("--positions", type=int, default=24)
-    parser.add_argument("--reference-movetime", type=int, default=2000)
+    parser.add_argument("--reference-movetime", type=int, default=3000)
+    parser.add_argument(
+        "--device-nps",
+        type=int,
+        help="override the startup benchmark to reproduce a slower device",
+    )
     args = parser.parse_args()
 
     generator = Engine(args.engine, args.eval_file)
@@ -213,23 +246,48 @@ def main():
     generator.quit()
     print(f"positions: {len(positions)}", file=sys.stderr)
 
+    benchmark = Engine(args.engine, args.eval_file)
+    measured_nps = args.device_nps or measure_nps(benchmark)
+    benchmark.quit()
+    print(f"device nps: {measured_nps}", file=sys.stderr)
+
     reference = Engine(args.engine, args.eval_file)
     best = {}
-    for fen in positions:
+    for index, fen in enumerate(positions, start=1):
         reference.new_game()
-        ref_move, variations = reference.search(fen, args.reference_movetime)
+        ref_move, variations, _ = reference.search(
+            fen, args.reference_movetime)
         best[fen] = (
             ref_move,
             _score(variations[0]) if variations else None,
         )
+        if index % 12 == 0 or index == len(positions):
+            print(
+                f"reference: {index}/{len(positions)}",
+                file=sys.stderr,
+                flush=True,
+            )
 
     subject = Engine(args.engine, args.eval_file)
     cache, rows = {}, []
-    for profile, movetime, multipv, max_loss in PROFILES:
+    for profile, movetime, multipv, max_loss, canonical, floor in PROFILES:
+        nodes = adaptive_nodes(
+            measured_nps, movetime, canonical, floor)
         losses, agreement = [], 0
-        for fen in positions:
+        for index, fen in enumerate(positions, start=1):
+            if index % 12 == 0 or index == len(positions):
+                print(
+                    f"{profile}: {index}/{len(positions)}",
+                    file=sys.stderr,
+                    flush=True,
+                )
             subject.new_game()
-            _, variations = subject.search(fen, movetime, multipv=multipv)
+            _, variations, _ = subject.search(
+                fen,
+                movetime,
+                multipv=multipv,
+                nodes=nodes,
+            )
             move = select_move(variations, fen, profile, max_loss)
             if move is None:
                 continue
@@ -247,6 +305,7 @@ def main():
         rows.append((
             profile,
             movetime,
+            nodes,
             multipv,
             sum(losses) / sample_count,
             losses[len(losses) // 2] if losses else 0,
@@ -257,10 +316,16 @@ def main():
     subject.quit()
     reference.quit()
 
-    print("profile  time  pv  mean loss  median  blunder>200  top agreement")
+    print(
+        "profile  time    nodes  pv  mean loss  median  "
+        "blunder>200  top agreement"
+    )
     for row in rows:
-        print(f"{row[0]:>7} {row[1]:>5} {row[2]:>3} {row[3]:>10.1f} "
-              f"{row[4]:>7.0f} {row[5]:>11.0f}% {row[6]:>13.0f}%")
+        print(
+            f"{row[0]:>7} {row[1]:>5} {row[2]:>8} {row[3]:>3} "
+            f"{row[4]:>10.1f} {row[5]:>7.0f} {row[6]:>11.0f}% "
+            f"{row[7]:>13.0f}%"
+        )
 
 
 if __name__ == "__main__":
