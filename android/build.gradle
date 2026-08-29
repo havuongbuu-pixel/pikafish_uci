@@ -48,10 +48,15 @@ android {
         // which no shipped device uses and which pikafish_arch.cmake refuses on
         // purpose. Building the engine for an architecture we never verified is
         // worse than not building it, so the list is explicit.
-        // Dropping armeabi-v7a is a one-line change; those devices fall back to
-        // the remote gateway.
+        //
+        // 64-bit only, and not by choice: a xiangqi board is 90 squares, so
+        // Pikafish types Bitboard as u128, which misc.h defines only under
+        // IS_64BIT. On armeabi-v7a the type simply does not exist and the
+        // engine cannot compile -- the upstream Makefile's armv7 target is
+        // inherited from Stockfish, where a 64-square board fits in u64.
+        // 32-bit devices fall back to the remote gateway.
         ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            abiFilters 'arm64-v8a', 'x86_64'
         }
 
         externalNativeBuild {

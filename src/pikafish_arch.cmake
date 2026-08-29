@@ -13,8 +13,13 @@ function(pikafish_apply_arch_flags target)
       target_compile_definitions(${target} PRIVATE
         ARCH=armv8 IS_64BIT USE_PREFETCH USE_POPCNT USE_NEON=8)
     elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
-      target_compile_definitions(${target} PRIVATE
-        ARCH=armv7-neon USE_PREFETCH USE_POPCNT USE_NEON=7)
+      # Reached only if someone puts armeabi-v7a back into abiFilters. Fail
+      # loudly here rather than 20 lines into bitboard.h: without IS_64BIT the
+      # u128 that Bitboard aliases is never defined, because a 90-square board
+      # does not fit the u64 the upstream armv7 target was written for.
+      message(FATAL_ERROR
+        "pikafish: armeabi-v7a is unsupported -- Bitboard needs a 128-bit type, "
+        "which exists only on 64-bit targets. Use the remote gateway there.")
     elseif(ANDROID_ABI STREQUAL "x86_64")
       target_compile_definitions(${target} PRIVATE
         ARCH=x86-64-sse41-popcnt IS_64BIT USE_PREFETCH USE_POPCNT
