@@ -103,9 +103,14 @@ update the network manifest when required, then run `apply_patches.sh`,
 
 ## Difficulty calibration
 
-The app measures packaged-engine throughput once on first acquisition and sends
-both node and wall-clock limits, so fast devices keep a stable strength ceiling
-while throttled devices remain responsive. The deterministic calibration tool
+On a device without a valid profile, the app measures packaged-engine
+throughput automatically after the first rendered frame and stores the selected
+Threads, Hash and baseline NPS locally. Later launches reuse that profile; it is
+invalidated by device/runtime, native build, engine, calibration algorithm or
+NNUE changes. Interactive searches preempt an unfinished benchmark and use safe
+limits, so calibration never blocks a requested move. Every search sends both
+node and wall-clock limits, keeping a stable strength ceiling on fast devices
+and responsiveness on throttled devices. The deterministic calibration tool
 mirrors the app's Easy, Normal, Hard, and Master budgets and MultiPV selector:
 
 ```sh
