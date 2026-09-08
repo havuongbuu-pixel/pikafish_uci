@@ -7,6 +7,51 @@ Staging note: this package currently lives inside the HocVienCoTuong repo while
 it is built out. The plan is a standalone repo consumed by git ref; extracting
 it is a `git subtree split`, and nothing here depends on the location.
 
+## Licence, and why this directory is published
+
+Pikafish is GPL-3, and this package links it: `src/pikafish_bridge.cpp` is
+compiled together with the engine's own objects and calls its `main()`. The
+bridge, the CMake configuration and the patches are therefore part of the
+engine's work, and this package is offered under the GPL-3 in `LICENSE`.
+
+Distributing an application that carries this engine obliges the distributor to
+offer the *corresponding source*: the pinned upstream commit **plus** the
+modifications made to it. Upstream is already public; the modifications are
+here. That is the whole reason this directory is published on its own -
+a recipient of the app can obtain the engine's source without the application
+around it being open.
+
+    third_party/Pikafish   upstream, pinned by submodule
+    patches/               every modification made to it
+    src/                   build configuration and the FFI bridge
+
+`third_party/Pikafish-HCE` is a different thing and is **not** part of what any
+application ships. It is a hand-crafted-evaluation variant built by
+`scripts/puzzle_verify/build_pikafish_hce.sh` to check puzzles offline, where no
+NNUE file is wanted. Keep the distinction: the app's licence notice names the
+official engine and its commit, and would be wrong if HCE ever shipped.
+
+When the engine or the network is upgraded, the pinned commit, the network
+SHA-256, the notice in `assets/legal/pikafish_notice.txt` and
+`EngineComplianceInfo` all move together, and this repository has to be
+republished to match. A release whose corresponding source is not public, or
+does not match the binary, does not satisfy the licence.
+
+### Publishing it
+
+    git subtree split --prefix=packages/pikafish_uci -b pikafish-uci-publish
+    git push git@github.com:havuongbuu-pixel/pikafish_uci.git         pikafish-uci-publish:main
+
+The split carries this directory's history and nothing else. One thing it does
+not carry is `.gitmodules`, which lives at the application repo's root: the
+published repo needs its own, with `path = third_party/Pikafish` and the
+upstream URL, or the submodule pointer there resolves to nothing. The notice
+names the upstream URL and commit as well, so the source is obtainable either
+way.
+
+Re-run the split after every engine or patch change, so the published source
+keeps matching the binaries being shipped.
+
 ## Status
 
 | Stage | Scope | State |
