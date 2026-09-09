@@ -39,18 +39,26 @@ does not match the binary, does not satisfy the licence.
 
 ### Publishing it
 
-    git subtree split --prefix=packages/pikafish_uci -b pikafish-uci-publish
-    git push git@github.com:havuongbuu-pixel/pikafish_uci.git         pikafish-uci-publish:main
+Published at https://github.com/havuongbuu-pixel/pikafish_uci, as a generated
+mirror of this directory:
 
-The split carries this directory's history and nothing else. One thing it does
-not carry is `.gitmodules`, which lives at the application repo's root: the
-published repo needs its own, with `path = third_party/Pikafish` and the
-upstream URL, or the submodule pointer there resolves to nothing. The notice
-names the upstream URL and commit as well, so the source is obtainable either
-way.
+    git push --force https://github.com/havuongbuu-pixel/pikafish_uci.git "$(git subtree split --prefix=packages/pikafish_uci)":main
 
-Re-run the split after every engine or patch change, so the published source
-keeps matching the binaries being shipped.
+`--force` is not carelessness here. Every split re-derives its commits from
+this directory's history, so a fresh one shares no commit ids with what is
+already published even when the content is identical. The mirror is generated,
+never committed to directly, and force is how a generated thing is replaced.
+Naming a branch instead - `subtree split -b <name>` - fails the second time it
+is run, because the branch it made is not an ancestor of the new split.
+
+The split carries `.gitmodules` from this directory, which is why that file
+sits here: it is inert while this package lives inside the application repo,
+and becomes the real one when the split makes this directory a root. Without
+it the pointers under `third_party` name a commit with no URL to fetch it from.
+
+Re-publish after every engine or patch change. A shipped binary whose
+corresponding source is not on that mirror, or does not match it, is a
+release the licence does not permit.
 
 ## Status
 

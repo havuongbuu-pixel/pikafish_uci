@@ -1,0 +1,17 @@
+# Inert here, and deliberately so.
+#
+# Git reads submodule configuration only from the .gitmodules at a repository's
+# root, which for this package is the application repo's root - that file is
+# the one in effect while this directory lives inside it.
+#
+# This copy exists for the split. Publishing this directory as its own
+# repository makes it the root, and without a .gitmodules there the pointers
+# under third_party name a commit and no URL to fetch it from. Keeping it here
+# means the published mirror is complete on its own, with no step anyone has to
+# remember.
+[submodule "third_party/Pikafish"]
+	path = third_party/Pikafish
+	url = https://github.com/official-pikafish/Pikafish.git
+[submodule "third_party/Pikafish-HCE"]
+	path = third_party/Pikafish-HCE
+	url = https://github.com/skystarspython/Pikafish-HCE.git
