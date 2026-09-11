@@ -51,13 +51,35 @@ final class PikafishBindings {
           .lookupFunction<
             Int32 Function(Pointer<Uint8>, Int32),
             int Function(Pointer<Uint8>, int)
-          >('pikafish_read');
+          >('pikafish_read'),
+        _canReadAssets = _lookupCanReadAssets(library);
 
   final int Function() start;
   final int Function() isRunning;
   final int Function() physicalMemoryMb;
   final int Function(Pointer<Utf8>) _write;
   final int Function(Pointer<Uint8>, int) read;
+  final int Function()? _canReadAssets;
+
+  /// Whether the engine can read its network out of the app package.
+  ///
+  /// True only on Android, and only once the Activity has handed over an
+  /// AssetManager. When false the caller must materialise the network as a
+  /// file and pass that path instead.
+  ///
+  /// False rather than throwing on a library built before this existed: an
+  /// older engine simply cannot do it, which is the same answer.
+  bool get canReadAssets => (_canReadAssets?.call() ?? 0) != 0;
+
+  static int Function()? _lookupCanReadAssets(DynamicLibrary library) {
+    try {
+      return library.lookupFunction<Int32 Function(), int Function()>(
+        'pikafish_can_read_assets',
+      );
+    } on ArgumentError {
+      return null;
+    }
+  }
 
   int writeCommand(String command) {
     final encoded = command.toNativeUtf8();

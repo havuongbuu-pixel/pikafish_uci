@@ -64,11 +64,29 @@ add_custom_command(
   COMMENT "Generating embedded-safe Pikafish engine"
   VERBATIM)
 
+# Upstream read_compressed_nnue can only stream from a file. An Android asset
+# is an entry in the APK, which is why the host used to copy 49 MB of network
+# out to storage before it could start. Generate a copy that can take its
+# blocks from either, and the copy stops being necessary.
+set(PIKAFISH_GENERATED_MISC
+  ${CMAKE_CURRENT_BINARY_DIR}/generated/pikafish_misc.cpp)
+add_custom_command(
+  OUTPUT ${PIKAFISH_GENERATED_MISC}
+  COMMAND ${CMAKE_COMMAND}
+    -DPIKAFISH_MISC_INPUT=${PIKAFISH_SRC_DIR}/misc.cpp
+    -DPIKAFISH_MISC_OUTPUT=${PIKAFISH_GENERATED_MISC}
+    -P ${CMAKE_CURRENT_LIST_DIR}/generate_pikafish_misc.cmake
+  DEPENDS
+    ${PIKAFISH_SRC_DIR}/misc.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/generate_pikafish_misc.cmake
+  COMMENT "Generating asset-aware Pikafish misc"
+  VERBATIM)
+
 # Mirrors SRCS in official Pikafish's Makefile, excluding universal/ and the
 # two generated translation units. Keep this explicit so an upstream update
 # cannot silently add code to a mobile artifact.
 set(PIKAFISH_SOURCES
-  attacks.cpp benchmark.cpp bitboard.cpp evaluate.cpp memory.cpp misc.cpp
+  attacks.cpp benchmark.cpp bitboard.cpp evaluate.cpp memory.cpp
   movegen.cpp movepick.cpp position.cpp score.cpp search.cpp thread.cpp
   timeman.cpp tt.cpp tune.cpp uci.cpp ucioption.cpp
   external/common/debug.cpp
@@ -92,16 +110,22 @@ set(PIKAFISH_SOURCES
 list(TRANSFORM PIKAFISH_SOURCES PREPEND ${PIKAFISH_SRC_DIR}/)
 list(APPEND PIKAFISH_SOURCES
   ${PIKAFISH_GENERATED_MAIN}
-  ${PIKAFISH_GENERATED_ENGINE})
+  ${PIKAFISH_GENERATED_ENGINE}
+  ${PIKAFISH_GENERATED_MISC})
 
 find_package(Threads REQUIRED)
 
 add_library(pikafish_core STATIC ${PIKAFISH_SOURCES})
-target_include_directories(pikafish_core PUBLIC ${PIKAFISH_SRC_DIR})
+target_include_directories(pikafish_core
+  PUBLIC ${PIKAFISH_SRC_DIR} ${CMAKE_CURRENT_LIST_DIR})
 target_compile_definitions(pikafish_core PRIVATE NDEBUG)
 target_compile_options(pikafish_core PRIVATE
   -Wall -Wcast-qual -fno-exceptions -O3)
 target_link_libraries(pikafish_core PUBLIC Threads::Threads)
+if(ANDROID)
+  # AAssetManager and AAssetManager_fromJava both live in libandroid.
+  target_link_libraries(pikafish_core PUBLIC android)
+endif()
 pikafish_apply_arch_flags(pikafish_core)
 # Hidden by default so the shared library exports only the five functions
 # marked PIKAFISH_EXPORT. Without this the engine's own renamed entry point
@@ -122,7 +146,13 @@ endif()
 
 # The FFI surface: engine core plus the pipe/thread bridge. This is the library
 # Dart opens on Android and links into the app binary on iOS.
-add_library(pikafish_uci SHARED ${CMAKE_CURRENT_LIST_DIR}/pikafish_bridge.cpp)
+# pikafish_asset_stream.cpp is compiled into the shared library rather than
+# into pikafish_core, because of the --exclude-libs below: everything arriving
+# through an archive loses its visibility, and this file exports a JNI entry
+# point the Android runtime has to be able to find by name.
+add_library(pikafish_uci SHARED
+  ${CMAKE_CURRENT_LIST_DIR}/pikafish_bridge.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/pikafish_asset_stream.cpp)
 target_link_libraries(pikafish_uci PRIVATE pikafish_core)
 target_compile_options(pikafish_uci PRIVATE -Wall -fno-exceptions -O3)
 set_target_properties(pikafish_uci PROPERTIES

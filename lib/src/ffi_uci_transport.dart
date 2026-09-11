@@ -35,6 +35,24 @@ final class PikafishTransport implements UciTransport {
     PikafishBindings.openLibrary(path: libraryPath),
   ).physicalMemoryMb();
 
+  /// Whether the engine can read its NNUE network out of the app package.
+  ///
+  /// True only on Android, and only after the Activity has handed over an
+  /// AssetManager. Callers use it to decide between pointing EvalFile at an
+  /// asset and materialising the network as a file first.
+  ///
+  /// Never throws. On a host with no engine library at all - a unit test on a
+  /// desktop, say - the answer is simply no.
+  static bool canReadAssets({String? libraryPath}) {
+    try {
+      return PikafishBindings(
+        PikafishBindings.openLibrary(path: libraryPath),
+      ).canReadAssets;
+    } on Object {
+      return false;
+    }
+  }
+
   /// Starts the engine and begins pumping its output.
   ///
   /// [libraryPath] overrides library lookup, for desktop builds and tests.
