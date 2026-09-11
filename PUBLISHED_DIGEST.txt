@@ -1,0 +1,8 @@
+# The digest of packages/pikafish_uci as last published to
+# https://github.com/havuongbuu-pixel/pikafish_uci
+#
+# GPL-3 obliges that mirror to match the binary being shipped. Republishing
+# without updating this line, or updating this line without republishing, both
+# defeat test/shared/legal/pikafish_mirror_test.dart - which exists because the
+# mirror had already drifted two days behind without anyone noticing.
+b69c98ac4d3ed92b928559b37bac558a54da50ad6024015d5143428704242270

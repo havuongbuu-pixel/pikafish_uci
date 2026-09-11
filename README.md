@@ -66,7 +66,7 @@ release the licence does not permit.
 | --- | --- | --- |
 | A | submodule, patch, CMake, desktop parity | done |
 | B | FFI bridge, Dart bindings, isolate transport | done |
-| C | Android build | pending device verification for the NNUE source update |
+| C | Android build | done; network read from the package, verified on device |
 | D | iOS/macOS CocoaPods build and in-app NNUE smoke | done on macOS |
 
 This is a pure Dart package today, on purpose: nothing in `lib/` needs Flutter,
@@ -153,6 +153,40 @@ compatibility command that validates those generators.
 To move to a newer upstream commit: check the submodule out at the new commit,
 update the network manifest when required, then run `apply_patches.sh`,
 `bench_parity.sh`, and the Flutter integration smoke before committing.
+
+## Giving the engine its network on Android
+
+Pikafish takes its NNUE as a filesystem path and streams it a block at a time.
+An asset inside an APK is a zip entry rather than a file, so a host either
+copies the network out to storage first — 49 MB on disk twice over, and about
+two seconds of the first launch — or lets the engine read the package directly.
+
+`generate_pikafish_misc.cmake` teaches `read_compressed_nnue` a second source,
+and `pikafish_asset_stream.cpp` supplies the blocks through `AAssetManager`. A
+path beginning `asset:` is read from the package; everything else is a file, as
+before.
+
+The host has to hand over an `AssetManager`, because only a `Context` has one:
+
+```kotlin
+class MainActivity : FlutterActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        PikafishAssets.install(assets)
+    }
+}
+```
+
+Then ask `PikafishTransport.canReadAssets()` before choosing what to set
+`EvalFile` to. Skip the call and it answers false, and the host must materialise
+a real file instead — which still works, and is what every other platform does,
+their assets already being files.
+
+Two failures here compile cleanly and only show on a device. The JNI entry point
+must be built into the shared library rather than the engine archive, because
+`--exclude-libs,ALL` hides everything an archive brings; and the generated
+`misc.cpp` must be checked to carry the patch, because an unpatched one builds,
+then reads an empty network and answers every position with `(none)`.
 
 ## Difficulty calibration
 
