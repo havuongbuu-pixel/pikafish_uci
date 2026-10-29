@@ -41,10 +41,25 @@ foreach(name IN ITEMS
     0002-embedded-nnue-failure.patch
     0003-android-asset-network.patch)
   execute_process(
-    COMMAND "${GIT_EXECUTABLE}" apply --no-index --unsafe-paths
-      "--directory=${PIKAFISH_OUTPUT_ROOT}" "${PIKAFISH_PATCH_ROOT}/${name}"
+    # An absolute --directory still lets Git silently skip paths when invoked
+    # below another repository's root (Gradle's .cxx cache is such a directory).
+    # Make the snapshot the explicit work tree and run from its root instead.
+    COMMAND "${GIT_EXECUTABLE}" "--work-tree=${output_root}" -C "${output_root}"
+      apply --no-index "${PIKAFISH_PATCH_ROOT}/${name}"
     RESULT_VARIABLE result ERROR_VARIABLE error)
   if(NOT result EQUAL 0)
     message(FATAL_ERROR "Cannot apply reviewed Pikafish patch ${name}: ${error}")
   endif()
 endforeach()
+
+function(require_snapshot_marker relative marker)
+  file(READ "${output_root}/${relative}" source)
+  string(FIND "${source}" "${marker}" found)
+  if(found EQUAL -1)
+    message(FATAL_ERROR "Pikafish patch was not applied to ${relative}")
+  endif()
+endfunction()
+require_snapshot_marker(src/main.cpp "int pikafish_main(")
+require_snapshot_marker(src/nnue/network.h "bool          verify(")
+require_snapshot_marker(src/nnue/network.cpp "PIKAFISH_NNUE_LOAD_FAILED")
+require_snapshot_marker(src/misc.cpp "pikafish_asset_open(")

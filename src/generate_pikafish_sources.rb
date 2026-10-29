@@ -41,9 +41,20 @@ module PikafishSources
     end
     PATCHES.each do |name|
       patch = File.join(package_dir, 'patches', name)
-      _, error, status = Open3.capture3('git', 'apply', '--no-index', '--unsafe-paths',
-                                      "--directory=#{snapshot}", patch)
+      _, error, status = Open3.capture3('git', "--work-tree=#{snapshot}", '-C', snapshot,
+                                      'apply', '--no-index', patch)
       raise "pikafish_uci: cannot apply #{name}: #{error}" unless status.success?
+    end
+
+    {
+      'main.cpp' => 'int pikafish_main(',
+      'nnue/network.h' => 'bool          verify(',
+      'nnue/network.cpp' => 'PIKAFISH_NNUE_LOAD_FAILED',
+      'misc.cpp' => 'pikafish_asset_open('
+    }.each do |relative, marker|
+      unless File.read(File.join(source_dir, relative)).include?(marker)
+        raise "pikafish_uci: patch was not applied to #{relative}"
+      end
     end
 
     expected = ENGINE_SOURCES.map { |relative| output_name(relative) }

@@ -131,7 +131,12 @@ git submodule update --init --recursive
 tools/apply_patches.sh           # validates generated patches; never edits the submodule
 tools/bench_parity.sh            # gate A: build matches upstream
 tools/gate_b.sh                  # gate B: bridge and transport work
+python3 tools/test_source_snapshots.py --cmake cmake --ruby ruby
 ```
+
+The snapshot regression runs inside a nested Git directory and outside the
+checkout, with spaces in paths. It also rejects stale headers, compares the
+CMake/CocoaPods results and verifies the upstream files remain unchanged.
 
 `gate_b.sh` builds, runs the native bridge smoke test, then runs the Dart
 transport gate. It skips the Dart half with a message when `dart` is not on

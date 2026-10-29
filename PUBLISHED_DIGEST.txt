@@ -1,3 +1,3 @@
 # SHA-256 of this corresponding-source snapshot (LF normalized).
 # The app notice identifies its public, versioned source revision.
-b8abc8a99f2711b771f91786891de5d59db91af1cf4bd23d26ffeb93c7fdc11f
+c1e04f5f3a44e9e42d629e8beede8020feddce111acc240c25b16f8c4c84b9f7
