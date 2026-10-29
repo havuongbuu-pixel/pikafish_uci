@@ -21,7 +21,7 @@ ruby -e \
   "$ROOT/src/generate_pikafish_sources.rb" \
   "$ROOT/macos"
 
-grep -q 'int pikafish_main(' "$ROOT/macos/generated/pikafish_main.cpp"
-grep -q 'PIKAFISH_NNUE_LOAD_FAILED' "$ROOT/macos/generated/pikafish_engine.cpp"
+grep -q 'int pikafish_main(' "$ROOT/macos/generated/upstream/src/main.cpp"
+grep -q 'PIKAFISH_NNUE_LOAD_FAILED' "$ROOT/macos/generated/upstream/src/nnue/network.cpp"
 
 echo "generated Pikafish patches validated; submodule left pristine"

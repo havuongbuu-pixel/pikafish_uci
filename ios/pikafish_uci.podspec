@@ -46,7 +46,7 @@ Pod::Spec.new do |s|
     # Generated sources live outside third_party/Pikafish/src,
     # so its #include "bitboard.h" (relative to the upstream tree) needs this
     # to resolve — mirrors CMakeLists.txt's target_include_directories.
-    'HEADER_SEARCH_PATHS' => '$(PODS_TARGET_SRCROOT)/../third_party/Pikafish/src',
+    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/generated/upstream/src" "$(PODS_TARGET_SRCROOT)/../src"',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++',
     # Reproducible winner of tools/benchmark_apple_optimizations.sh. PGO was

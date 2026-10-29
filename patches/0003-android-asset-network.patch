@@ -1,0 +1,86 @@
+diff --git a/src/misc.cpp b/src/misc.cpp
+--- a/src/misc.cpp
++++ b/src/misc.cpp
+@@ -19,2 +19,5 @@
+ #include "misc.h"
++
++#include "pikafish_asset_stream.h"
++#include <vector>
+
+@@ -505,19 +508,61 @@
+ std::stringstream read_zipped_nnue(const std::string& fpath) {
+-    void*  buf     = NULL;
+-    size_t bufsize = 0;
+-
+-    struct zip_t* zip = zip_open(fpath.c_str(), 0, 'r');
+-    if (zip_entries_total(zip) == 1)
++    // This release stores its serialized NNUE in a one-entry ZIP archive.
++    // Android assets need a memory-backed ZIP; ordinary files keep the same
++    // path-based reader. Bound both sizes before accepting package contents.
++    constexpr size_t MaxNetworkBytes = 256 * 1024 * 1024;
++    std::stringstream ss;
++    const bool fromAsset = pikafish_asset_is_asset_path(fpath.c_str()) != 0;
++    std::vector<char> compressed;
++    zip_t* zip = nullptr;
++    if (fromAsset)
+     {
+-        zip_entry_openbyindex(zip, 0);
+-        { zip_entry_read(zip, &buf, &bufsize); }
+-        zip_entry_close(zip);
++        if (!pikafish_asset_open(fpath.c_str()))
++            return ss;
++        char block[65536];
++        for (;;)
++        {
++            const int count = pikafish_asset_read(block, sizeof(block));
++            if (count == 0)
++                break;
++            if (count < 0 || compressed.size() + count > MaxNetworkBytes)
++            {
++                pikafish_asset_close();
++                return ss;
++            }
++            compressed.insert(compressed.end(), block, block + count);
++        }
++        pikafish_asset_close();
++        if (compressed.empty())
++            return ss;
++        zip = zip_stream_open(compressed.data(), compressed.size(), 0, 'r');
+     }
+-    zip_close(zip);
+-
+-    std::stringstream ss;
+-    if (buf)
+-        ss.write((const char*) buf, bufsize);
+-    free(buf);
+-
++    else
++        zip = zip_open(fpath.c_str(), 0, 'r');
++
++    if (!zip)
++        return ss;
++    const auto closeZip = [&]() {
++        if (fromAsset)
++            zip_stream_close(zip);
++        else
++            zip_close(zip);
++    };
++    if (zip_entries_total(zip) != 1 || zip_entry_openbyindex(zip, 0) < 0)
++    {
++        closeZip();
++        return ss;
++    }
++    const auto append = [](void* arg, uint64_t offset, const void* data, size_t size) -> size_t {
++        auto& stream = *static_cast<std::stringstream*>(arg);
++        if (stream.tellp() != static_cast<std::streamoff>(offset))
++            return 0;
++        stream.write(static_cast<const char*>(data), size);
++        return stream ? size : 0;
++    };
++    const bool valid = zip_entry_size(zip) <= MaxNetworkBytes
++                    && zip_entry_extract(zip, append, &ss) == 0;
++    zip_entry_close(zip);
++    closeZip();
++    if (!valid)
++        return std::stringstream{};
+     return ss;

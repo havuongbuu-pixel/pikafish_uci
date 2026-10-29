@@ -1,13 +1,8 @@
 diff --git a/src/main.cpp b/src/main.cpp
-index ed53848..87cf6a6 100644
 --- a/src/main.cpp
 +++ b/src/main.cpp
-@@ -23,7 +23,7 @@
- 
- using namespace Stockfish;
- 
+@@ -29,3 +29,3 @@
+
 -int main(int argc, char* argv[]) {
 +int pikafish_main(int argc, char* argv[]) {
- 
-   std::cout << engine_info() << std::endl;
- 
+

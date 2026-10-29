@@ -5,7 +5,7 @@
 # model as iOS (see ios/pikafish_uci.podspec for why this is a regular
 # embedded framework rather than the static framework
 # pikafish_flutter_project_structure.md §8 originally called for: nothing in
-# the app statically references the five bridge functions, so a static
+# the app statically references the bridge functions, so a static
 # archive never gets pulled into the final binary at all — confirmed here via
 # integration_test/pikafish_smoke_test.dart, which is what actually runs the
 # engine inside the compiled app and checks for a real bestmove, not just a
@@ -38,7 +38,7 @@ Pod::Spec.new do |s|
     # Generated sources live outside third_party/Pikafish/src,
     # so its #include "bitboard.h" (relative to the upstream tree) needs this
     # to resolve — mirrors CMakeLists.txt's target_include_directories.
-    'HEADER_SEARCH_PATHS' => '$(PODS_TARGET_SRCROOT)/../third_party/Pikafish/src',
+    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/generated/upstream/src" "$(PODS_TARGET_SRCROOT)/../src"',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++',
     # Matches iOS and the reproducible Apple benchmark. Full LTO was the fastest

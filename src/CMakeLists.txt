@@ -12,110 +12,45 @@ option(PIKAFISH_BUILD_CLI "Build the desktop CLI used by bench_parity.sh" ON)
 
 include(${CMAKE_CURRENT_LIST_DIR}/pikafish_arch.cmake)
 
-set(PIKAFISH_SRC_DIR ${CMAKE_CURRENT_LIST_DIR}/../third_party/Pikafish/src)
-
-if(NOT EXISTS ${PIKAFISH_SRC_DIR}/main.cpp)
-  message(FATAL_ERROR
-    "Official Pikafish sources missing. Run: git submodule update --init --recursive")
-endif()
-
-# Gradle can reuse a configured CMake tree after another gate has restored the
-# submodule's main.cpp. Compiling that restored file would define main() while
-# the bridge still references pikafish_main(), producing a late linker error.
-# Generate the renamed translation unit as a real build output instead: Ninja
-# then follows main.cpp and the published patch as dependencies on every build,
-# and the upstream submodule stays untouched.
-set(PIKAFISH_MAIN_PATCH
-  ${CMAKE_CURRENT_LIST_DIR}/../patches/0001-rename-main.patch)
-set(PIKAFISH_GENERATED_MAIN
-  ${CMAKE_CURRENT_BINARY_DIR}/generated/pikafish_main.cpp)
-add_custom_command(
-  OUTPUT ${PIKAFISH_GENERATED_MAIN}
-  COMMAND ${CMAKE_COMMAND}
-    -DPIKAFISH_MAIN_INPUT=${PIKAFISH_SRC_DIR}/main.cpp
-    -DPIKAFISH_MAIN_PATCH=${PIKAFISH_MAIN_PATCH}
-    -DPIKAFISH_MAIN_OUTPUT=${PIKAFISH_GENERATED_MAIN}
-    -P ${CMAKE_CURRENT_LIST_DIR}/generate_pikafish_main.cmake
-  DEPENDS
-    ${PIKAFISH_SRC_DIR}/main.cpp
-    ${PIKAFISH_MAIN_PATCH}
-    ${CMAKE_CURRENT_LIST_DIR}/generate_pikafish_main.cmake
-  COMMENT "Generating patched Pikafish entry point"
-  VERBATIM)
-
-# Official Pikafish terminates the process when EvalFile is missing. That is
-# correct for its CLI, but this engine is linked into the Flutter process, so
-# exit() would terminate the whole app. Generate the reviewed embedded-host
-# variant without modifying the pinned submodule.
-set(PIKAFISH_ENGINE_PATCH
-  ${CMAKE_CURRENT_LIST_DIR}/../patches/0002-embedded-nnue-failure.patch)
-set(PIKAFISH_GENERATED_ENGINE
-  ${CMAKE_CURRENT_BINARY_DIR}/generated/pikafish_engine.cpp)
-add_custom_command(
-  OUTPUT ${PIKAFISH_GENERATED_ENGINE}
-  COMMAND ${CMAKE_COMMAND}
-    -DPIKAFISH_ENGINE_INPUT=${PIKAFISH_SRC_DIR}/engine.cpp
-    -DPIKAFISH_ENGINE_OUTPUT=${PIKAFISH_GENERATED_ENGINE}
-    -P ${CMAKE_CURRENT_LIST_DIR}/generate_pikafish_engine.cmake
-  DEPENDS
-    ${PIKAFISH_SRC_DIR}/engine.cpp
-    ${PIKAFISH_ENGINE_PATCH}
-    ${CMAKE_CURRENT_LIST_DIR}/generate_pikafish_engine.cmake
-  COMMENT "Generating embedded-safe Pikafish engine"
-  VERBATIM)
-
-# Upstream read_compressed_nnue can only stream from a file. An Android asset
-# is an entry in the APK, which is why the host used to copy 49 MB of network
-# out to storage before it could start. Generate a copy that can take its
-# blocks from either, and the copy stops being necessary.
-set(PIKAFISH_GENERATED_MISC
-  ${CMAKE_CURRENT_BINARY_DIR}/generated/pikafish_misc.cpp)
-add_custom_command(
-  OUTPUT ${PIKAFISH_GENERATED_MISC}
-  COMMAND ${CMAKE_COMMAND}
-    -DPIKAFISH_MISC_INPUT=${PIKAFISH_SRC_DIR}/misc.cpp
-    -DPIKAFISH_MISC_OUTPUT=${PIKAFISH_GENERATED_MISC}
-    -P ${CMAKE_CURRENT_LIST_DIR}/generate_pikafish_misc.cmake
-  DEPENDS
-    ${PIKAFISH_SRC_DIR}/misc.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/generate_pikafish_misc.cmake
-  COMMENT "Generating asset-aware Pikafish misc"
-  VERBATIM)
-
-# Mirrors SRCS in official Pikafish's Makefile, excluding universal/ and the
-# two generated translation units. Keep this explicit so an upstream update
-# cannot silently add code to a mobile artifact.
-set(PIKAFISH_SOURCES
-  attacks.cpp benchmark.cpp bitboard.cpp evaluate.cpp memory.cpp
-  movegen.cpp movepick.cpp position.cpp score.cpp search.cpp thread.cpp
-  timeman.cpp tt.cpp tune.cpp uci.cpp ucioption.cpp
-  external/common/debug.cpp
-  external/common/entropy_common.cpp
-  external/common/error_private.cpp
-  external/common/fse_decompress.cpp
-  external/common/pool.cpp
-  external/common/threading.cpp
-  external/common/xxhash.cpp
-  external/common/zstd_common.cpp
-  external/decompress/huf_decompress.cpp
-  external/decompress/huf_decompress_amd64.S
-  external/decompress/zstd_ddict.cpp
-  external/decompress/zstd_decompress.cpp
-  external/decompress/zstd_decompress_block.cpp
-  nnue/features/full_threats.cpp
-  nnue/features/half_ka_v2_hm.cpp
-  nnue/network.cpp
-  nnue/nnue_accumulator.cpp
-  nnue/nnue_misc.cpp)
+# Compile every header and translation unit from a private source snapshot.
+# Canonical patches are shared with CocoaPods; the pinned submodule stays clean.
+set(PIKAFISH_UPSTREAM_ROOT ${CMAKE_CURRENT_LIST_DIR}/../third_party/Pikafish)
+set(PIKAFISH_PREPARED_ROOT ${CMAKE_CURRENT_BINARY_DIR}/upstream)
+set(PIKAFISH_SRC_DIR ${PIKAFISH_PREPARED_ROOT}/src)
+set(PIKAFISH_PATCH_ROOT ${CMAKE_CURRENT_LIST_DIR}/../patches)
+file(GLOB_RECURSE PIKAFISH_INPUTS CONFIGURE_DEPENDS
+  ${PIKAFISH_UPSTREAM_ROOT}/src/*)
+file(GLOB PIKAFISH_PATCHES CONFIGURE_DEPENDS ${PIKAFISH_PATCH_ROOT}/*.patch)
+set(PIKAFISH_SOURCE_NAMES
+  benchmark.cpp bitboard.cpp evaluate.cpp main.cpp misc.cpp movegen.cpp
+  movepick.cpp position.cpp search.cpp thread.cpp timeman.cpp tt.cpp
+  uci.cpp ucioption.cpp tune.cpp engine.cpp score.cpp memory.cpp
+  nnue/nnue_misc.cpp nnue/features/half_ka_v2_hm.cpp nnue/network.cpp
+  external/zip.cpp)
+set(PIKAFISH_SOURCES ${PIKAFISH_SOURCE_NAMES})
 list(TRANSFORM PIKAFISH_SOURCES PREPEND ${PIKAFISH_SRC_DIR}/)
-list(APPEND PIKAFISH_SOURCES
-  ${PIKAFISH_GENERATED_MAIN}
-  ${PIKAFISH_GENERATED_ENGINE}
-  ${PIKAFISH_GENERATED_MISC})
+set(PIKAFISH_PREPARED_STAMP ${PIKAFISH_PREPARED_ROOT}/prepared.stamp)
+add_custom_command(
+  OUTPUT ${PIKAFISH_PREPARED_STAMP}
+  BYPRODUCTS ${PIKAFISH_SOURCES}
+    ${PIKAFISH_SRC_DIR}/nnue/network.h
+  COMMAND ${CMAKE_COMMAND}
+    -DPIKAFISH_INPUT_ROOT=${PIKAFISH_UPSTREAM_ROOT}
+    -DPIKAFISH_OUTPUT_ROOT=${PIKAFISH_PREPARED_ROOT}
+    -DPIKAFISH_PATCH_ROOT=${PIKAFISH_PATCH_ROOT}
+    -P ${CMAKE_CURRENT_LIST_DIR}/prepare_pikafish_sources.cmake
+  COMMAND ${CMAKE_COMMAND} -E touch ${PIKAFISH_PREPARED_STAMP}
+  DEPENDS ${PIKAFISH_INPUTS} ${PIKAFISH_PATCHES}
+    ${CMAKE_CURRENT_LIST_DIR}/prepare_pikafish_sources.cmake
+  COMMENT "Preparing embedded Pikafish source snapshot"
+  VERBATIM)
+add_custom_target(pikafish_sources DEPENDS ${PIKAFISH_PREPARED_STAMP})
+set_source_files_properties(${PIKAFISH_SOURCES} PROPERTIES GENERATED TRUE)
 
 find_package(Threads REQUIRED)
 
 add_library(pikafish_core STATIC ${PIKAFISH_SOURCES})
+add_dependencies(pikafish_core pikafish_sources)
 target_include_directories(pikafish_core
   PUBLIC ${PIKAFISH_SRC_DIR} ${CMAKE_CURRENT_LIST_DIR})
 target_compile_definitions(pikafish_core PRIVATE NDEBUG)
@@ -127,7 +62,7 @@ if(ANDROID)
   target_link_libraries(pikafish_core PUBLIC android)
 endif()
 pikafish_apply_arch_flags(pikafish_core)
-# Hidden by default so the shared library exports only the five functions
+# Hidden by default so the shared library exports only the bridge and asset functions
 # marked PIKAFISH_EXPORT. Without this the engine's own renamed entry point
 # leaks into the dynamic symbol table and the FFI contract stops being obvious.
 set_target_properties(pikafish_core PROPERTIES
@@ -140,7 +75,9 @@ set_target_properties(pikafish_core PROPERTIES
 # the entry point is supplied here. Stage B links the same core into a shared
 # library alongside the FFI bridge instead.
 if(PIKAFISH_BUILD_CLI AND NOT ANDROID)
-  add_executable(pikafish_cli ${CMAKE_CURRENT_LIST_DIR}/pikafish_cli.cpp)
+  add_executable(pikafish_cli
+    ${CMAKE_CURRENT_LIST_DIR}/pikafish_cli.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/pikafish_asset_stream.cpp)
   target_link_libraries(pikafish_cli PRIVATE pikafish_core)
 endif()
 
@@ -172,7 +109,7 @@ if(ANDROID)
     # of libc++ from its dynamic symbol table. That is a well-known source of
     # symbol collisions with other native libraries in the same process.
     # --exclude-libs hides everything that arrived via an archive, including our
-    # own engine core; the five bridge functions are compiled straight into this
+    # own engine core; the bridge functions are compiled straight into this
     # target and keep their explicit default visibility.
     -Wl,--exclude-libs,ALL)
 endif()

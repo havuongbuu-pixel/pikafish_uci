@@ -1,11 +1,22 @@
 # pikafish_uci
 
-Official Pikafish with NNUE packaged for Flutter over FFI. Xiangqi engine,
-GPL-3.
+Official Pikafish 2024-08-31 with its matching release NNUE, packaged for
+Flutter over FFI. Engine code: GPL-3. Network: the separate NNUE licence in
+that release (commercial use requires permission).
 
 Staging note: this package currently lives inside the HocVienCoTuong repo while
 it is built out. The plan is a standalone repo consumed by git ref; extracting
 it is a `git subtree split`, and nothing here depends on the location.
+
+## Pinned engine / network pair
+
+- Engine commit: `e0c6f068dfef32c64add074eec604eab65613198`.
+- Official release archive: https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2024-08-31/Pikafish.2024-08-31.7z
+- Archive SHA-256: `57f2ae2242fce6d4e789942011e086001ebb44f3ac8e308d9abebf12ba01bda5`.
+- Network entry: `pikafish.nnue`, 22758893 bytes.
+- Network SHA-256: `bdcdb210349fbca6c8b15435a1e25c19fc2754ac4cc338f18ffd68fffce1b985`.
+- Network terms: `NNUE-README.md` in that archive. Legal use only;
+  commercial use requires permission. The GPL covers the engine code.
 
 ## Licence, and why this directory is published
 
@@ -82,7 +93,7 @@ src/                      one native tree, every platform reads it
   pikafish_bridge.{h,cpp} pipes + dup2 + pthread; the FFI surface
   pikafish_cli.cpp        desktop entry point (main() was renamed away)
 lib/
-  src/bindings.dart       five hand-written C lookups
+  src/bindings.dart       FFI and asset-capability lookups
   src/uci_transport.dart  the interface everything above depends on
   src/ffi_uci_transport.dart  reader isolate + line assembly
 third_party/Pikafish      official git submodule, pinned
@@ -99,12 +110,19 @@ diagnostics must go to stderr, and consumers must ignore lines they do not
 recognise. The engine also starts only once per process and cannot be
 restarted.
 
-Official Pikafish requires an external `pikafish.nnue`. The Flutter app
-verifies the bundled network hash, materialises it into Application Support,
-then sends its absolute path through the UCI `EvalFile` option before the first
-search. The reviewed embedded-host patch turns a missing network into
-`PIKAFISH_NNUE_LOAD_FAILED` instead of letting upstream call `exit()` inside the
-app process.
+Official Pikafish requires an external `pikafish.nnue`. The app pins the
+network bytes, hash, archive entry and source URL in its NNUE manifest. Android
+reads it from the signed APK when AssetManager is available; other launches
+materialise a hash-verified copy. Missing or incompatible networks produce
+`PIKAFISH_NNUE_LOAD_FAILED` and skip search/eval/perft without exiting the app.
+
+## Build dependencies and source preparation
+
+Both build paths require Git. CMake's `prepare_pikafish_sources.cmake` and
+CocoaPods' `generate_pikafish_sources.rb` copy the pinned source into an ignored
+build directory, normalize checkout line endings, and apply the same three
+canonical patches. The complete header/implementation tree is patched together;
+the upstream submodule remains untouched. A patch mismatch fails the build.
 
 ## Build and verify
 
@@ -128,10 +146,10 @@ gradle :pikafish_uci:assembleRelease                   # gate C, packaging half
 
 `android_build.sh` cross-builds every ABI named in `android/build.gradle` and
 checks each one's define set against upstream's Makefile, its 16 KB page
-alignment, and that it exports exactly the five bridge functions. It reads the
+alignment, and that it exports the explicit FFI and asset-registration allowlist. It reads the
 ABI list from `build.gradle` on purpose: a second hand-maintained list is how a
 Gradle build ends up shipping an architecture the gate never saw. Run the Gradle
-half too — it exercises the packaging path, which is where that bug showed up.
+half too â€” it exercises the packaging path, which is where that bug showed up.
 
 `bench_parity.sh` builds the engine twice -- once with upstream's own Makefile
 from pristine sources, once through our CMake -- and compares them. It runs
@@ -143,28 +161,26 @@ three checks and each exists for a different reason:
    architecture flags. That measurement is why check 1 exists.
 3. **NPS, advisory.** Too load-sensitive to gate on.
 
-## Working with the patch
+## Working with the patches
 
-The official submodule always remains pristine. CMake writes patched copies to
-its build directory; CocoaPods writes ignored forwarders and patched copies to
-`ios/generated` or `macos/generated`. `apply_patches.sh` is retained as a
-compatibility command that validates those generators.
+The source snapshot applies:
+- `0001-rename-main.patch`: in-process entry point.
+- `0002-embedded-nnue-failure.patch`: boolean verification and guarded callers.
+- `0003-android-asset-network.patch`: a bounded, asset-aware ZIP network reader.
 
-To move to a newer upstream commit: check the submodule out at the new commit,
-update the network manifest when required, then run `apply_patches.sh`,
-`bench_parity.sh`, and the Flutter integration smoke before committing.
+To change upstream, update its pointer, the reviewed patches, CMake/CocoaPods
+source lists, the network manifest, runtime identity and legal notices together.
+Run `apply_patches.sh`, `bench_parity.sh` and device smoke checks before shipping.
 
 ## Giving the engine its network on Android
 
-Pikafish takes its NNUE as a filesystem path and streams it a block at a time.
-An asset inside an APK is a zip entry rather than a file, so a host either
-copies the network out to storage first — 49 MB on disk twice over, and about
-two seconds of the first launch — or lets the engine read the package directly.
-
-`generate_pikafish_misc.cmake` teaches `read_compressed_nnue` a second source,
-and `pikafish_asset_stream.cpp` supplies the blocks through `AAssetManager`. A
-path beginning `asset:` is read from the package; everything else is a file, as
-before.
+This release stores NNUE parameters in a one-entry ZIP. The asset patch reads
+the compressed bytes through `pikafish_asset_stream.cpp`, opens a memory-backed
+ZIP and decodes into the parameter stream. Both archive and entry are bounded
+to 256 MiB, invalid ZIP/CRC data fails loading, and there is no materialised copy
+in app storage. The decoder still allocates compressed/expanded buffers; this
+is not a zero-copy or constant-memory claim. Ordinary filesystem paths retain
+the upstream raw-network fallback.
 
 The host has to hand over an `AssetManager`, because only a `Context` has one:
 
@@ -179,7 +195,7 @@ class MainActivity : FlutterActivity() {
 
 Then ask `PikafishTransport.canReadAssets()` before choosing what to set
 `EvalFile` to. Skip the call and it answers false, and the host must materialise
-a real file instead — which still works, and is what every other platform does,
+a real file instead â€” which still works, and is what every other platform does,
 their assets already being files.
 
 Two failures here compile cleanly and only show on a device. The JNI entry point

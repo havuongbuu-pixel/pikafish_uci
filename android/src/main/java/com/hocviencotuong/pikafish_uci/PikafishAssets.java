@@ -6,12 +6,9 @@ import android.content.res.AssetManager;
  * Hands the engine the app's assets so it can read its NNUE network from the
  * package instead of a copy on disk.
  *
- * <p>The network is 49 MB. Pikafish takes it as a filesystem path and streams
- * it in blocks, and an asset inside an APK is a zip entry rather than a file -
- * so the host used to copy the whole thing out to app storage once, leaving the
- * device holding it twice and costing about two seconds on first launch. The
- * native side can read the same blocks straight from the package, but only if
- * somebody gives it an AssetManager, and only a Context has one.
+ * <p>Pikafish normally opens its compressed network by filesystem path.
+ * Android assets live inside the APK, so the native adapter uses AssetManager
+ * to load the packaged network without leaving a second copy in app storage.
  *
  * <p>Call {@link #register(AssetManager)} from the Activity before the engine
  * starts. Registering twice is harmless; not registering at all leaves the host

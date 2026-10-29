@@ -1,15 +1,9 @@
 // Reading the NNUE network straight out of the Android APK.
 //
-// Pikafish takes its network as a filesystem path and streams it in blocks,
-// decompressing zstd as it goes. An asset inside an APK is an entry in a zip,
-// not a file, so the host used to copy all 49 MB out to app storage once and
-// hand over that path - which left the device holding the network twice and
-// cost two seconds on first launch.
-//
-// These entry points let the engine pull the same bytes in the same blocks
-// from the package it already shipped in. No copy, and no buffer holding the
-// whole network, which matters: the memory the copy saved would otherwise be
-// spent anyway, on a device that may not have it.
+// The selected release loads a ZIP-compressed NNUE. Its asset adapter reads
+// the compressed archive through these functions, then decodes it in memory.
+// The packaged file is not copied to application storage. This API itself only
+// supplies blocks; it does not promise that the network decoder is zero-copy.
 //
 // Every function is a no-op returning failure off Android, where the host
 // keeps handing over a real path because the asset already is a real file.
