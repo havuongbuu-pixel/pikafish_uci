@@ -133,6 +133,13 @@ for e in json.load(open(sys.argv[1])):
     echo "    expected: ${ref:-<none>}"
     echo "    actual  : ${got:-<none>}"
   fi
+  printf '%s\n' "$ref" > "$build.defines"
+  # Also inspect the optional engine, require only the checked ISA extension,
+  # and prove that the fallback binary has no dot-product instructions or
+  # eager DT_NEEDED dependency on the specialized library.
+  python3 "$ROOT/tools/verify_android_native.py" --build-dir "$build" \
+    --abi "$abi" --ndk "$NDK" --baseline-defines "$build.defines" \
+    > "$build.native.json" || status=1
 done
 
 echo

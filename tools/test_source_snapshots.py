@@ -14,9 +14,9 @@ ARGS, REST = parser.parse_known_args()
 MARKERS = {
     'main.cpp': 'int pikafish_main(',
     'nnue/network.h': 'bool          verify(',
-    'nnue/network.cpp': 'PIKAFISH_NNUE_LOAD_FAILED',
-    'misc.cpp': 'pikafish_asset_open(',
+    'nnue/network.cpp': 'PikafishNnueStream::open(',
 }
+PATCHED = [*MARKERS, 'engine.cpp', 'misc.cpp', 'misc.h']
 
 
 class SourceSnapshots(unittest.TestCase):
@@ -26,7 +26,7 @@ class SourceSnapshots(unittest.TestCase):
         roots = [inside.resolve(), Path(tempfile.gettempdir()).resolve()]
         snapshots = []
         upstream = PACKAGE / 'third_party/Pikafish/src'
-        pristine = {name: (upstream / name).read_bytes() for name in MARKERS}
+        pristine = {name: (upstream / name).read_bytes() for name in PATCHED}
         try:
             for root in roots:
                 parent = Path(tempfile.mkdtemp(prefix='pikafish-snapshot-with spaces-', dir=root))
@@ -45,7 +45,7 @@ class SourceSnapshots(unittest.TestCase):
                 stale.touch()
                 subprocess.run(command, check=True, cwd=parent)
                 self.assertFalse(stale.exists())
-            for name in [*MARKERS, 'engine.cpp']:
+            for name in PATCHED:
                 self.assertEqual((snapshots[0][0] / 'upstream/src' / name).read_bytes(),
                                  (snapshots[1][0] / 'upstream/src' / name).read_bytes())
             if ARGS.ruby:
@@ -55,7 +55,7 @@ class SourceSnapshots(unittest.TestCase):
                                 'PikafishSources.generate!(File.expand_path(ARGV[1]))',
                                 str(PACKAGE / 'src/generate_pikafish_sources.rb'),
                                 str(PACKAGE / 'ios')], check=True, cwd=PACKAGE / 'ios')
-                for name in [*MARKERS, 'engine.cpp']:
+                for name in PATCHED:
                     self.assertEqual((PACKAGE / 'ios/generated/upstream/src' / name).read_bytes(),
                                      (snapshots[0][0] / 'upstream/src' / name).read_bytes())
             for name, original in pristine.items():

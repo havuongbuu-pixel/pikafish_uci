@@ -1,6 +1,8 @@
 #include "pikafish_asset_stream.h"
+#include "pikafish_dispatch.h"
 
 #include <string.h>
+#include <stdio.h>
 
 #if defined(__ANDROID__)
 #include <android/asset_manager.h>
@@ -60,7 +62,27 @@ int pikafish_asset_read(char* buffer, int capacity) {
 #endif
 }
 
+int64_t pikafish_asset_size(void) {
+#if defined(__ANDROID__)
+  return g_asset ? AAsset_getLength64(g_asset) : -1;
+#else
+  return -1;
+#endif
+}
+
+int64_t pikafish_asset_seek(int64_t offset) {
+#if defined(__ANDROID__)
+  return g_asset && offset >= 0 ? AAsset_seek64(g_asset, offset, SEEK_SET) : -1;
+#else
+  (void)offset;
+  return -1;
+#endif
+}
+
 int pikafish_can_read_assets(void) {
+#if defined(PIKAFISH_RUNTIME_DISPATCH)
+  if (const auto* backend = pikafish_selected_backend()) return backend->can_read_assets();
+#endif
 #if defined(__ANDROID__)
   return g_manager != nullptr ? 1 : 0;
 #else
@@ -85,7 +107,13 @@ void pikafish_asset_close(void) {
 // binding, silently, so they are kept together in this package.
 JNIEXPORT jboolean JNICALL
 Java_com_hocviencotuong_pikafish_1uci_PikafishAssets_register(
-    JNIEnv* env, jclass /*clazz*/, jobject asset_manager) {
+    JNIEnv* env, jclass clazz, jobject asset_manager) {
+#if defined(PIKAFISH_RUNTIME_DISPATCH)
+  if (const auto* backend = pikafish_selected_backend())
+    return backend->register_assets(env, clazz, asset_manager);
+#else
+  (void)clazz;
+#endif
   if (asset_manager == nullptr) {
     pikafish_asset_manager_set(nullptr);
     return JNI_FALSE;

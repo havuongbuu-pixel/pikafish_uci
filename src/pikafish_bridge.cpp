@@ -1,4 +1,5 @@
 #include "pikafish_bridge.h"
+#include "pikafish_dispatch.h"
 
 #include <atomic>
 #include <cerrno>
@@ -69,6 +70,9 @@ void* engine_thread(void*) {
 extern "C" {
 
 int pikafish_start(void) {
+#if defined(PIKAFISH_RUNTIME_DISPATCH)
+  if (const auto* backend = pikafish_selected_backend()) return backend->start();
+#endif
   if (g_started) return PIKAFISH_ERR_ALREADY;
 
   int to_engine[2] = {-1, -1};
@@ -119,9 +123,17 @@ int pikafish_start(void) {
   return PIKAFISH_OK;
 }
 
-int pikafish_is_running(void) { return g_running.load() ? 1 : 0; }
+int pikafish_is_running(void) {
+#if defined(PIKAFISH_RUNTIME_DISPATCH)
+  if (const auto* backend = pikafish_selected_backend()) return backend->is_running();
+#endif
+  return g_running.load() ? 1 : 0;
+}
 
 int64_t pikafish_physical_memory_mb(void) {
+#if defined(PIKAFISH_RUNTIME_DISPATCH)
+  if (const auto* backend = pikafish_selected_backend()) return backend->physical_memory_mb();
+#endif
 #if defined(__APPLE__)
   uint64_t bytes = 0;
   size_t size = sizeof(bytes);
@@ -139,6 +151,9 @@ int64_t pikafish_physical_memory_mb(void) {
 }
 
 int pikafish_write(const char* command) {
+#if defined(PIKAFISH_RUNTIME_DISPATCH)
+  if (const auto* backend = pikafish_selected_backend()) return backend->write(command);
+#endif
   if (!g_started || g_to_engine_write < 0) return PIKAFISH_ERR_NOT_STARTED;
   if (command == nullptr) return PIKAFISH_ERR_INVALID;
 
@@ -151,6 +166,9 @@ int pikafish_write(const char* command) {
 }
 
 int pikafish_read(char* buffer, int capacity) {
+#if defined(PIKAFISH_RUNTIME_DISPATCH)
+  if (const auto* backend = pikafish_selected_backend()) return backend->read(buffer, capacity);
+#endif
   if (!g_started || g_from_engine_read < 0) return PIKAFISH_ERR_NOT_STARTED;
   if (buffer == nullptr || capacity <= 0) return PIKAFISH_ERR_INVALID;
 

@@ -50,19 +50,19 @@ does not match the binary, does not satisfy the licence.
 
 ### Publishing it
 
-Published at https://github.com/havuongbuu-pixel/pikafish_uci, as a generated
-mirror of this directory:
+Published at https://github.com/havuongbuu-pixel/pikafish_uci, as an exact
+mirror of this directory. The app pins an immutable source commit; preserve
+existing commits so installed versions can still retrieve their own source.
+The 2024 release snapshots use branch `engine-2024-08-31`.
 
-    git push --force https://github.com/havuongbuu-pixel/pikafish_uci.git "$(git subtree split --prefix=packages/pikafish_uci)":main
+A full history export can be made with `git subtree split
+--prefix=packages/pikafish_uci`. An equivalent snapshot commit can be made with
+`git commit-tree HEAD:packages/pikafish_uci -p <previous-published-commit>`.
+Before publishing, verify the exported commit's root tree equals the package
+tree, then push it to the version branch without replacing old source history.
+Update the app's source URL and `PUBLISHED_DIGEST.txt` together with publication.
 
-`--force` is not carelessness here. Every split re-derives its commits from
-this directory's history, so a fresh one shares no commit ids with what is
-already published even when the content is identical. The mirror is generated,
-never committed to directly, and force is how a generated thing is replaced.
-Naming a branch instead - `subtree split -b <name>` - fails the second time it
-is run, because the branch it made is not an ancestor of the new split.
-
-The split carries `.gitmodules` from this directory, which is why that file
+The export carries `.gitmodules` from this directory, which is why that file
 sits here: it is inert while this package lives inside the application repo,
 and becomes the real one when the split makes this directory a root. Without
 it the pointers under `third_party` name a commit with no URL to fetch it from.
@@ -92,6 +92,8 @@ src/                      one native tree, every platform reads it
   pikafish_arch.cmake     ABI -> -D flags; mirrors upstream's ARCH blocks
   pikafish_bridge.{h,cpp} pipes + dup2 + pthread; the FFI surface
   pikafish_cli.cpp        desktop entry point (main() was renamed away)
+  pikafish_dispatch.*     Android ARM64 runtime dot-product selection
+  pikafish_nnue_stream.*  bounded ZIP reader, file or Android asset
 lib/
   src/bindings.dart       FFI and asset-capability lookups
   src/uci_transport.dart  the interface everything above depends on
@@ -151,7 +153,10 @@ gradle :pikafish_uci:assembleRelease                   # gate C, packaging half
 
 `android_build.sh` cross-builds every ABI named in `android/build.gradle` and
 checks each one's define set against upstream's Makefile, its 16 KB page
-alignment, and that it exports the explicit FFI and asset-registration allowlist. It reads the
+alignment, and that it exports the explicit FFI and asset-registration allowlist.
+`verify_android_native.py` checks both ARM64 variants, disassembles them to
+reject dot-product instructions in the fallback, and rejects an eager dependency
+on the optional library. It reads the
 ABI list from `build.gradle` on purpose: a second hand-maintained list is how a
 Gradle build ends up shipping an architecture the gate never saw. Run the Gradle
 half too â€” it exercises the packaging path, which is where that bug showed up.
@@ -180,12 +185,37 @@ Run `apply_patches.sh`, `bench_parity.sh` and device smoke checks before shippin
 ## Giving the engine its network on Android
 
 This release stores NNUE parameters in a one-entry ZIP. The asset patch reads
-the compressed bytes through `pikafish_asset_stream.cpp`, opens a memory-backed
-ZIP and decodes into the parameter stream. Both archive and entry are bounded
-to 256 MiB, invalid ZIP/CRC data fails loading, and there is no materialised copy
-in app storage. The decoder still allocates compressed/expanded buffers; this
-is not a zero-copy or constant-memory claim. Ordinary filesystem paths retain
-the upstream raw-network fallback.
+the compressed bytes through `pikafish_asset_stream.cpp`. A miniz iterator feeds
+a 64 KiB stream buffer directly into the existing parameter arrays, without
+whole compressed or expanded network buffers. Both archive and entry are
+bounded to 256 MiB; the iterator's final CRC/size verification is required before
+the network is accepted. Reloads invalidate the old filename before overwriting
+parameters, so a failed reload cannot leave partially changed weights certified
+as valid. Ordinary filesystem paths retain the raw-network fallback.
+
+The app should store the `.nnue` asset without outer APK compression
+(`androidResources.noCompress += "nnue"`), because the asset is already a ZIP.
+The engine still supports deflated APK assets. Parameter arrays and miniz's
+bounded buffers remain allocated; this is not a zero-copy claim.
+
+## Android CPU selection
+
+`libpikafish_uci.so` contains the baseline ARMv8 NEON engine and retains the
+existing seven C/JNI exports. On ARM64 it checks `HWCAP_ASIMDDP` before loading
+`libpikafish_uci_dotprod.so` with `dlopen`. The optional engine requires only
+`-march=armv8-a+dotprod`; a newer architecture level would enable unrelated
+instructions that this feature check does not prove safe.
+
+The selection is process-wide and thread safe. A missing library or incomplete
+export table falls back to the baseline. No C++ state crosses between engines;
+the AssetManager registration follows the same selected backend as FFI. Other
+ABIs and CocoaPods keep their existing baseline. For a diagnostic fallback build,
+configure CMake with `-DPIKAFISH_ENABLE_RUNTIME_DOTPROD=OFF`.
+
+`tools/dispatch_smoke.cpp` exercises unsupported CPUs, a missing library,
+incomplete exports and successful dispatch using a fake feature/loader boundary.
+Run each scenario in a fresh process; the selector intentionally caches its
+first result. On device, compare fixed-node search signatures as well as NPS.
 
 The host has to hand over an `AssetManager`, because only a `Context` has one:
 
@@ -215,7 +245,11 @@ On a device without a valid profile, the app measures packaged-engine
 throughput automatically after the first rendered frame and stores the selected
 Threads, Hash and baseline NPS locally. Later launches reuse that profile; it is
 invalidated by device/runtime, native build, engine, calibration algorithm or
-NNUE changes. Interactive searches preempt an unfinished benchmark and use safe
+NNUE changes. The app clears the transposition table between calibration
+probes. Devices with sufficient RAM/CPU also compare completed depth-18 searches
+on three positions: two threads require both an 18% NPS gain and useful latency
+savings, without a large per-position regression. High NPS alone does not
+promote Hash to 64 MiB. Compact phones retain one thread and 16 MiB Hash. Interactive searches preempt an unfinished benchmark and use safe
 limits, so calibration never blocks a requested move. Every search sends both
 node and wall-clock limits, keeping a stable strength ceiling on fast devices
 and responsiveness on throttled devices. The deterministic calibration tool

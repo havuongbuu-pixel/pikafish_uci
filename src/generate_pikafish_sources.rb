@@ -49,16 +49,17 @@ module PikafishSources
     {
       'main.cpp' => 'int pikafish_main(',
       'nnue/network.h' => 'bool          verify(',
-      'nnue/network.cpp' => 'PIKAFISH_NNUE_LOAD_FAILED',
-      'misc.cpp' => 'pikafish_asset_open('
-    }.each do |relative, marker|
-      unless File.read(File.join(source_dir, relative)).include?(marker)
-        raise "pikafish_uci: patch was not applied to #{relative}"
+      'nnue/network.cpp' => ['PIKAFISH_NNUE_LOAD_FAILED', 'PikafishNnueStream::open(', 'input->verified()']
+    }.each do |relative, markers|
+      Array(markers).each do |marker|
+        unless File.read(File.join(source_dir, relative)).include?(marker)
+          raise "pikafish_uci: patch was not applied to #{relative}"
+        end
       end
     end
 
     expected = ENGINE_SOURCES.map { |relative| output_name(relative) }
-    expected.concat(%w[pikafish_bridge.cpp pikafish_asset_stream.cpp])
+    expected.concat(%w[pikafish_bridge.cpp pikafish_asset_stream.cpp pikafish_nnue_stream.cpp])
     Dir.children(out).each do |entry|
       path = File.join(out, entry)
       FileUtils.rm_f(path) if File.file?(path) && !expected.include?(entry)
@@ -66,7 +67,7 @@ module PikafishSources
     ENGINE_SOURCES.each do |relative|
       write_forwarder(File.join(out, output_name(relative)), File.join(source_dir, relative))
     end
-    %w[pikafish_bridge.cpp pikafish_asset_stream.cpp].each do |name|
+    %w[pikafish_bridge.cpp pikafish_asset_stream.cpp pikafish_nnue_stream.cpp].each do |name|
       write_forwarder(File.join(out, name), File.join(package_dir, 'src', name))
     end
   end

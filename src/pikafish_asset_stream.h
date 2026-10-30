@@ -1,9 +1,8 @@
 // Reading the NNUE network straight out of the Android APK.
 //
-// The selected release loads a ZIP-compressed NNUE. Its asset adapter reads
-// the compressed archive through these functions, then decodes it in memory.
-// The packaged file is not copied to application storage. This API itself only
-// supplies blocks; it does not promise that the network decoder is zero-copy.
+// The selected release loads a ZIP-compressed NNUE. Its asset adapter supplies
+// bounded reads and seeks for a streaming ZIP decoder. Neither a copy in app
+// storage nor a complete decompressed serialization buffer is needed.
 //
 // Every function is a no-op returning failure off Android, where the host
 // keeps handing over a real path because the asset already is a real file.
@@ -12,6 +11,7 @@
 #define PIKAFISH_ASSET_STREAM_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,6 +38,9 @@ int pikafish_asset_open(const char* path);
 // Reads up to `capacity` bytes. Returns the count, 0 at the end, or -1 on
 // error. Mirrors what an ifstream read gives the caller it replaces.
 int pikafish_asset_read(char* buffer, int capacity);
+// Length and absolute seek; -1 on failure. Used by the ZIP reader callback.
+int64_t pikafish_asset_size(void);
+int64_t pikafish_asset_seek(int64_t offset);
 
 void pikafish_asset_close(void);
 
